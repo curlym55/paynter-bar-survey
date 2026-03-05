@@ -5,6 +5,7 @@ import {
   getDrinks, addDrink,
   castVotes, getVoteCounts,
   resetVotes, resetSuggestions,
+  getVotingOpen, setVotingOpen,
 } from '@/lib/supabase';
 
 // ── Constants ─────────────────────────────────────────────────
@@ -69,6 +70,7 @@ export default function PaynterBarSurvey() {
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [votingOpen, setVotingOpenState] = useState(false);
 
   // Drink data from DB (grouped by category)
   const [drinksByCategory, setDrinksByCategory] = useState(EMPTY_STATE());
@@ -81,8 +83,13 @@ export default function PaynterBarSurvey() {
   // Local vote selections
   const [votes, setVotes] = useState(EMPTY_STATE());
 
-  // Load drinks on mount
-  useEffect(() => { loadDrinks(); }, []);
+  // Load drinks and voting status on mount
+  useEffect(() => { loadDrinks(); loadVotingStatus(); }, []);
+
+  async function loadVotingStatus() {
+    const open = await getVotingOpen();
+    setVotingOpenState(open);
+  }
 
   async function loadDrinks() {
     if (!isConnected()) return;
@@ -282,11 +289,11 @@ export default function PaynterBarSurvey() {
             <strong>Phase 1</strong>
             <small>Suggest drinks</small>
           </button>
-          <button style={{ ...S.phaseBtn, ...(residentName.trim() ? {} : S.disabled) }}
-            onClick={() => residentName.trim() && setPhase('vote')}>
-            <span style={{ fontSize:28 }}>✅</span>
+          <button style={{ ...S.phaseBtn, ...(!votingOpen ? S.phaseBtnLocked : {}), ...(residentName.trim() && votingOpen ? {} : S.disabled) }}
+            onClick={() => residentName.trim() && votingOpen && setPhase('vote')}>
+            <span style={{ fontSize:28 }}>{votingOpen ? '✅' : '🔒'}</span>
             <strong>Phase 2</strong>
-            <small>Vote on the list</small>
+            <small>{votingOpen ? 'Vote on the list' : 'Voting not open yet'}</small>
           </button>
         </div>
         <div style={{ textAlign:'center', marginTop:14 }}>
@@ -506,6 +513,26 @@ export default function PaynterBarSurvey() {
         <button style={S.ghostBtn} onClick={() => { setPhase('home'); setAdminPin(''); setShowAdminLogin(false); }}>← Back</button>
       </div>
 
+      <div style={S.adminControls}>
+        <div style={{ ...S.phaseToggle, ...(votingOpen ? S.phaseToggleOpen : S.phaseToggleClosed) }}>
+          <div>
+            <strong>{votingOpen ? '✅ Voting is OPEN' : '🔒 Voting is CLOSED'}</strong>
+            <p style={{ margin:'3px 0 0', fontSize:12, color:'#666' }}>
+              {votingOpen ? 'Residents can now access Phase 2 voting' : 'Only Phase 1 suggestions are accessible to residents'}
+            </p>
+          </div>
+          <button style={{ ...S.toggleBtn, ...(votingOpen ? S.toggleBtnClose : S.toggleBtnOpen) }}
+            onClick={async () => {
+              setLoading(true);
+              await setVotingOpen(!votingOpen);
+              setVotingOpenState(!votingOpen);
+              setLoading(false);
+            }}>
+            {loading ? '...' : votingOpen ? 'Close Voting' : 'Open Voting'}
+          </button>
+        </div>
+      </div>
+
       <div style={S.tabsOuter}>
         {CAT_GROUPS.map(group => (
           <div key={group.label} style={S.tabGroup}>
@@ -654,4 +681,12 @@ const S = {
   retailLabel: { color:'#666' },
   arrowLabel: { color:'#aaa', fontSize:10 },
   markupLabel: { color:'#1a5a8a', fontWeight:600 },
+  adminControls: { padding:'14px 14px 0' },
+  phaseToggle: { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 16px', borderRadius:10, border:'2px solid', gap:12 },
+  phaseToggleOpen: { background:'#e8f4e8', borderColor:'#4CAF50' },
+  phaseToggleClosed: { background:'#fff3e0', borderColor:'#FF9800' },
+  toggleBtn: { padding:'8px 18px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:"'Georgia',serif", fontSize:13, fontWeight:600, whiteSpace:'nowrap' },
+  toggleBtnOpen: { background:'#4CAF50', color:'#fff' },
+  toggleBtnClose: { background:'#FF5722', color:'#fff' },
+  phaseBtnLocked: { background:'#f5f5f5', borderColor:'#ddd' },
 };
