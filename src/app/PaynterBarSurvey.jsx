@@ -460,7 +460,14 @@ export default function PaynterBarSurvey() {
                       <strong style={{ color:'#2C1A0E' }}>{item.name}</strong>
                       <Tag>{item.type}</Tag>
                       {item.is_current_stock && <Tag onmenu>✓ On menu · {item.current_bar_price}</Tag>}
-                      {!item.is_current_stock && item.current_bar_price && <Tag est>💡 {item.current_bar_price}</Tag>}
+                      {!item.is_current_stock && item.retail_price && (
+                        <span style={S.priceCompare}>
+                          <span style={S.retailLabel}>Retail {item.retail_price}</span>
+                          <span style={S.arrowLabel}>→</span>
+                          <span style={S.markupLabel}>Bar ~{item.markup_price}</span>
+                        </span>
+                      )}
+                      {!item.is_current_stock && !item.retail_price && item.current_bar_price && <Tag est>💡 {item.current_bar_price}</Tag>}
                       {item.suggested_by && !item.is_current_stock && <Tag green>suggested by {item.suggested_by}</Tag>}
                       {isZero(activeCategory) && <Tag teal>0% alc</Tag>}
                       {item.notes && <p style={{ margin:'3px 0 0', fontSize:12, color:'#888' }}>{item.notes}</p>}
@@ -541,7 +548,13 @@ export default function PaynterBarSurvey() {
                       <Tag>{item.type}</Tag>
                       <Tag gold>{item.price_range} · {item.price}</Tag>
                       {item.is_current_stock && <Tag onmenu>✓ On menu · {item.current_bar_price}</Tag>}
-                      {!item.is_current_stock && item.current_bar_price && <Tag est>💡 {item.current_bar_price}</Tag>}
+                      {!item.is_current_stock && item.retail_price && (
+                        <span style={S.priceCompare}>
+                          <span style={S.retailLabel}>Retail {item.retail_price}</span>
+                          <span style={S.arrowLabel}>→</span>
+                          <span style={S.markupLabel}>Bar ~{item.markup_price}</span>
+                        </span>
+                      )}
                       {!item.is_seed && item.suggested_by && <Tag green>by {item.suggested_by}</Tag>}
                       {isZero(activeCategory) && <Tag teal>0% alc</Tag>}
                     </div>
@@ -637,4 +650,8 @@ const S = {
   phaseBtn: { flex:1, padding:'14px 8px', borderRadius:10, border:'2px solid #D4A96A', background:'#FFFAF5', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:4, fontFamily:"'Georgia',serif", color:'#2C1A0E', fontSize:13 },
   adminBox: { background:'#F5F5F5', borderRadius:8, padding:16, marginTop:14, border:'1px solid #DDD' },
   successCard: { margin:'50px 20px', background:'#fff', borderRadius:16, padding:'36px 24px', textAlign:'center', boxShadow:'0 4px 24px rgba(44,26,14,0.1)', border:'1px solid #F0E0C8' },
+  priceCompare: { display:'inline-flex', alignItems:'center', gap:3, marginLeft:6, background:'#f0f7ff', borderRadius:4, padding:'2px 7px', fontSize:11 },
+  retailLabel: { color:'#666' },
+  arrowLabel: { color:'#aaa', fontSize:10 },
+  markupLabel: { color:'#1a5a8a', fontWeight:600 },
 };
