@@ -323,12 +323,9 @@ export default function PaynterBarSurvey() {
           <div style={{ fontSize:64 }}>🎉</div>
           <h2 style={{ ...S.heroTitle, color:'#2C1A0E' }}>Thanks, {residentName}!</h2>
           <p style={{ color:'#666', marginBottom:24 }}>
-            Your {totalSuggestions} suggestion{totalSuggestions !== 1 ? 's' : ''} have been saved. Keep an eye out for Phase 2 voting!
+            Your {totalSuggestions} suggestion{totalSuggestions !== 1 ? 's' : ''} have been saved. We'll let you know when voting opens — watch the noticeboard!
           </p>
-          <button style={S.primaryBtn} onClick={() => { setSubmitted(false); setVoteSubmitted(false); setVotes(EMPTY_STATE()); setPhase('vote'); }}>
-            Go to Voting →
-          </button>
-          <button style={{ ...S.primaryBtn, background:'transparent', color:'#8B6914', border:'1px solid #D4A96A', marginTop:8 }}
+          <button style={S.primaryBtn}
             onClick={() => { setPhase('home'); setSubmitted(false); setSuggestions(EMPTY_STATE()); setResidentName(''); }}>
             ← Back to start
           </button>
