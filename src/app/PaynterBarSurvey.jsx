@@ -460,6 +460,7 @@ export default function PaynterBarSurvey() {
                       <strong style={{ color:'#2C1A0E' }}>{item.name}</strong>
                       <Tag>{item.type}</Tag>
                       {item.is_current_stock && <Tag onmenu>✓ On menu · {item.current_bar_price}</Tag>}
+                      {!item.is_current_stock && item.current_bar_price && <Tag est>💡 {item.current_bar_price}</Tag>}
                       {item.suggested_by && !item.is_current_stock && <Tag green>suggested by {item.suggested_by}</Tag>}
                       {isZero(activeCategory) && <Tag teal>0% alc</Tag>}
                       {item.notes && <p style={{ margin:'3px 0 0', fontSize:12, color:'#888' }}>{item.notes}</p>}
@@ -540,6 +541,7 @@ export default function PaynterBarSurvey() {
                       <Tag>{item.type}</Tag>
                       <Tag gold>{item.price_range} · {item.price}</Tag>
                       {item.is_current_stock && <Tag onmenu>✓ On menu · {item.current_bar_price}</Tag>}
+                      {!item.is_current_stock && item.current_bar_price && <Tag est>💡 {item.current_bar_price}</Tag>}
                       {!item.is_seed && item.suggested_by && <Tag green>by {item.suggested_by}</Tag>}
                       {isZero(activeCategory) && <Tag teal>0% alc</Tag>}
                     </div>
@@ -567,9 +569,9 @@ export default function PaynterBarSurvey() {
 
 // ── Tag helper ────────────────────────────────────────────────
 
-function Tag({ children, gold, green, teal, onmenu }) {
-  const bg = onmenu ? '#e8f0e8' : gold ? '#f5e6c8' : green ? '#e8f4e8' : teal ? '#e0f4f4' : '#F0E0C8';
-  const color = onmenu ? '#2d5a2d' : gold ? '#8B4513' : green ? '#2d6a2d' : teal ? '#1a6b6b' : '#6B3A2A';
+function Tag({ children, gold, green, teal, onmenu, est }) {
+  const bg = onmenu ? '#e8f0e8' : est ? '#fef9e7' : gold ? '#f5e6c8' : green ? '#e8f4e8' : teal ? '#e0f4f4' : '#F0E0C8';
+  const color = onmenu ? '#2d5a2d' : est ? '#7d6608' : gold ? '#8B4513' : green ? '#2d6a2d' : teal ? '#1a6b6b' : '#6B3A2A';
   const fw = onmenu ? 600 : 400;
   return <span style={{
     display:'inline-block', background: bg, color, fontWeight: fw,
