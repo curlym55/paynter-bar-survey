@@ -27,7 +27,7 @@ export async function addDrink(drink) {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from('drinks')
-    .insert([drink])
+    .insert([{ ...drink, is_current_stock: false, current_bar_price: null }])
     .select()
     .single();
   if (error) throw error;
@@ -60,6 +60,29 @@ export async function getVoteCounts() {
   const map = {};
   (data || []).forEach(r => { map[r.drink_id] = r.vote_count; });
   return map;
+}
+
+// ── Settings ──────────────────────────────────────────────────
+
+export async function getVotingOpen() {
+  if (!supabase) return false;
+  const { data, error } = await supabase
+    .from('settings')
+    .select('value')
+    .eq('key', 'voting_open')
+    .single();
+  if (error) return false;
+  return data?.value === 'true';
+}
+
+export async function setVotingOpen(open) {
+  if (!supabase) return null;
+  const { error } = await supabase
+    .from('settings')
+    .update({ value: open ? 'true' : 'false' })
+    .eq('key', 'voting_open');
+  if (error) throw error;
+  return true;
 }
 
 // ── Admin reset ───────────────────────────────────────────────
