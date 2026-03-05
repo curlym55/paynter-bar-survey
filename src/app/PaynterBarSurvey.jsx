@@ -577,7 +577,7 @@ function Tag({ children, gold, green, teal }) {
 // ── Styles ────────────────────────────────────────────────────
 
 const S = {
-  root: { minHeight:'100vh', background:'linear-gradient(160deg,#FFF8F0 0%,#F5E6D0 100%)', fontFamily:"'Georgia','Times New Roman',serif", paddingBottom:60, maxWidth:660, margin:'0 auto' },
+  root: { minHeight:'100vh', background:'linear-gradient(160deg,#FFF8F0 0%,#F5E6D0 100%)', fontFamily:"'Georgia','Times New Roman',serif", paddingBottom:60, maxWidth:960, margin:'0 auto' },
   demoBar: { background:'#fff3cd', color:'#856404', padding:'10px 16px', fontSize:13, textAlign:'center', borderBottom:'1px solid #ffd666' },
   hero: { background:'linear-gradient(135deg,#2C1A0E 0%,#6B3A2A 60%,#8B4513 100%)', padding:'44px 24px 36px', textAlign:'center', color:'#fff' },
   heroTitle: { fontFamily:"'Georgia',serif", fontSize:30, fontWeight:400, margin:'0 0 6px', color:'#F5C842', letterSpacing:1 },
