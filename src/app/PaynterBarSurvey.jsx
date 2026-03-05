@@ -323,7 +323,7 @@ export default function PaynterBarSurvey() {
           <div style={{ fontSize:64 }}>🎉</div>
           <h2 style={{ ...S.heroTitle, color:'#2C1A0E' }}>Thanks, {residentName}!</h2>
           <p style={{ color:'#666', marginBottom:24 }}>
-            Your {totalSuggestions} suggestion{totalSuggestions !== 1 ? 's' : ''} have been saved. We'll let you know when voting opens — watch the noticeboard!
+            Your {totalSuggestions} suggestion{totalSuggestions !== 1 ? 's' : ''} have been saved. We'll let you know when voting opens — watch for communication on when voting commences!
           </p>
           <button style={S.primaryBtn}
             onClick={() => { setPhase('home'); setSubmitted(false); setSuggestions(EMPTY_STATE()); setResidentName(''); }}>
