@@ -369,6 +369,8 @@ export default function PaynterBarSurvey() {
         <GroupedTabs withBadgeFrom={suggestions} />
         <PriceBadges />
 
+        <ReferencePanel drinks={drinksByCategory[activeCategory] || []} category={activeCategory} />
+
         <div style={{ ...S.card, ...(isZero(activeCategory) ? S.cardZero : {}) }}>
           <h3 style={S.cardTitle}>Suggest a {CAT_LABELS[activeCategory]}</h3>
           <div style={S.formGrid}>
@@ -627,6 +629,67 @@ export default function PaynterBarSurvey() {
 }
 
 // ── Tag helper ────────────────────────────────────────────────
+
+// ── Reference Panel ───────────────────────────────────────────
+
+function ReferencePanel({ drinks, category }) {
+  const [open, setOpen] = useState(false);
+  const current = drinks.filter(d => d.is_current_stock);
+  const comparison = drinks.filter(d => !d.is_current_stock && d.retail_price);
+
+  return (
+    <div style={RP.wrap}>
+      <button style={RP.toggle} onClick={() => setOpen(v => !v)}>
+        <span>📋 View current stock &amp; price guide for {CAT_LABELS[category]}</span>
+        <span style={{ fontSize:12 }}>{open ? '▲ Hide' : '▼ Show'}</span>
+      </button>
+      {open && (
+        <div style={RP.panel}>
+          {current.length > 0 && (
+            <>
+              <div style={RP.sectionHead}>✓ Currently stocked</div>
+              {current.map(d => (
+                <div key={d.id} style={RP.row}>
+                  <span style={RP.name}>{d.name}</span>
+                  <span style={RP.price}>{d.current_bar_price}</span>
+                </div>
+              ))}
+            </>
+          )}
+          {comparison.length > 0 && (
+            <>
+              <div style={{ ...RP.sectionHead, marginTop: current.length ? 10 : 0 }}>💡 Could be stocked — estimated bar price</div>
+              {comparison.map(d => (
+                <div key={d.id} style={RP.row}>
+                  <span style={RP.name}>{d.name}</span>
+                  <span style={RP.comparePrice}>
+                    <span style={{ color:'#999' }}>Retail {d.retail_price}</span>
+                    <span style={{ color:'#bbb', margin:'0 4px' }}>→</span>
+                    <span style={{ color:'#1a5a8a', fontWeight:600 }}>~{d.markup_price}</span>
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+          {current.length === 0 && comparison.length === 0 && (
+            <p style={{ color:'#aaa', fontSize:12, margin:0 }}>No reference data for this category yet.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const RP = {
+  wrap: { margin:'10px 14px 0' },
+  toggle: { width:'100%', display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', background:'#f5f0e8', border:'1px solid #E8D5B7', borderRadius:8, cursor:'pointer', fontSize:13, fontFamily:"'Georgia',serif", color:'#6B3A2A', textAlign:'left' },
+  panel: { background:'#fff', border:'1px solid #E8D5B7', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 14px' },
+  sectionHead: { fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8, color:'#8B6914', marginBottom:6 },
+  row: { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 0', borderBottom:'1px solid #f5ede0', fontSize:13 },
+  name: { color:'#2C1A0E', flex:1 },
+  price: { color:'#2d5a2d', fontWeight:600, fontSize:12, background:'#e8f0e8', borderRadius:4, padding:'2px 7px', marginLeft:8 },
+  comparePrice: { display:'flex', alignItems:'center', fontSize:12, marginLeft:8 },
+};
 
 function Tag({ children, gold, green, teal, onmenu, est }) {
   const bg = onmenu ? '#e8f0e8' : est ? '#fef9e7' : gold ? '#f5e6c8' : green ? '#e8f4e8' : teal ? '#e0f4f4' : '#F0E0C8';
