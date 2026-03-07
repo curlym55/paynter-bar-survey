@@ -277,6 +277,28 @@ export default function PaynterBarSurvey() {
         </div>
       </div>
       <div style={S.card}>
+        <h2 style={S.cardTitle}>How this survey works</h2>
+        <p style={S.instrText}>We're giving residents a say in what we stock at the Paynter Bar. The survey runs in two phases:</p>
+        <div style={S.instrRow}>
+          <div style={S.instrPhase}>
+            <span style={S.instrIcon}>✏️</span>
+            <div>
+              <strong style={S.instrLabel}>Phase 1 — Suggest <span style={S.instrStatus}>open now</span></strong>
+              <p style={S.instrDesc}>Browse the categories and suggest drinks you'd love to see on the menu. You can see what we currently stock and what new options might cost at the bar. Add as many suggestions as you like across any category.</p>
+            </div>
+          </div>
+          <div style={S.instrPhase}>
+            <span style={S.instrIcon}>✅</span>
+            <div>
+              <strong style={S.instrLabel}>Phase 2 — Vote <span style={{ ...S.instrStatus, ...S.instrStatusSoon }}>coming soon</span></strong>
+              <p style={S.instrDesc}>Once we've collected all suggestions, we'll open up voting. You'll be able to vote for your favourites from the full compiled list. The most popular drinks will be considered for the menu.</p>
+            </div>
+          </div>
+        </div>
+        <p style={{ ...S.instrText, marginTop:12, fontStyle:'italic', color:'#999' }}>Enter your name or unit number below to get started.</p>
+      </div>
+
+      <div style={S.card}>
         <h2 style={S.cardTitle}>Let's get started</h2>
         <label style={S.label}>Your name or unit number</label>
         <input style={S.input} placeholder="e.g. Margaret · Unit 42..."
@@ -686,4 +708,12 @@ const S = {
   toggleBtnOpen: { background:'#4CAF50', color:'#fff' },
   toggleBtnClose: { background:'#FF5722', color:'#fff' },
   phaseBtnLocked: { background:'#f5f5f5', borderColor:'#ddd' },
+  instrText: { fontSize:13, color:'#666', margin:'0 0 12px', lineHeight:1.6 },
+  instrRow: { display:'flex', flexDirection:'column', gap:12 },
+  instrPhase: { display:'flex', gap:12, alignItems:'flex-start' },
+  instrIcon: { fontSize:22, flexShrink:0, marginTop:2 },
+  instrLabel: { fontSize:13, color:'#2C1A0E', display:'block', marginBottom:4 },
+  instrStatus: { background:'#e8f4e8', color:'#2d6a2d', borderRadius:4, padding:'1px 7px', fontSize:11, fontWeight:400, marginLeft:6 },
+  instrStatusSoon: { background:'#fff3e0', color:'#e65100' },
+  instrDesc: { fontSize:12, color:'#888', margin:'0', lineHeight:1.6 },
 };
