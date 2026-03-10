@@ -136,24 +136,39 @@ export default function PaynterBarSurvey() {
     setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' });
   }
 
+  async function saveSuggestionLive(cat, suggestion) {
+    try {
+      const rangeObj = PRICE_RANGES[cat].find(r => r.label === suggestion.priceRange);
+      const saved = await addDrink({
+        category: cat, name: suggestion.name, type: suggestion.type,
+        price_range: suggestion.priceRange, price_range_order: rangeObj?.order ?? 1,
+        price: suggestion.price, suggested_by: residentName,
+        notes: suggestion.notes || null, is_seed: false,
+      });
+      return saved; // returns DB row with real id
+    } catch (e) {
+      console.error('saveSuggestionLive error:', e);
+      return null;
+    }
+  }
+
+  async function deleteSuggestionLive(drinkId) {
+    try {
+      if (!supabase) return;
+      await supabase.from('drinks').delete().eq('id', drinkId);
+    } catch (e) {
+      console.error('deleteSuggestionLive error:', e);
+    }
+  }
+
   async function submitSuggestions() {
+    // Suggestions already saved live — just mark submitted
     setLoading(true); setError('');
     try {
-      for (const cat of CATEGORIES) {
-        for (const s of suggestions[cat]) {
-          const rangeObj = PRICE_RANGES[cat].find(r => r.label === s.priceRange);
-          await addDrink({
-            category: cat, name: s.name, type: s.type,
-            price_range: s.priceRange, price_range_order: rangeObj?.order ?? 1,
-            price: s.price, suggested_by: residentName,
-            notes: s.notes || null, is_seed: false,
-          });
-        }
-      }
       await loadDrinks();
       setSubmitted(true);
     } catch (e) {
-      setError('Could not save suggestions. Please try again.');
+      setError('Could not finalise. Please try again.');
     }
     setLoading(false);
   }
@@ -350,7 +365,7 @@ export default function PaynterBarSurvey() {
           <div style={{ fontSize:64 }}>🎉</div>
           <h2 style={{ ...S.heroTitle, color:'#2C1A0E' }}>Thanks, {residentName}!</h2>
           <p style={{ color:'#666', marginBottom:24 }}>
-            Your {totalSuggestions} suggestion{totalSuggestions !== 1 ? 's' : ''} have been saved. We'll let you know when voting opens — watch for communication on when voting commences!
+            Your suggestions have been saved. We'll let you know when voting opens — watch for communication on when voting commences!
           </p>
           <button style={S.primaryBtn}
             onClick={() => { setPhase('home'); setSubmitted(false); setSuggestions(EMPTY_STATE()); setResidentName(''); }}>
@@ -360,80 +375,43 @@ export default function PaynterBarSurvey() {
       </div>
     );
 
-    const currentItems = (drinksByCategory[activeCategory] || []).filter(d => d.is_current_stock);
-    const mySuggestions = suggestions[activeCategory] || [];
-
-    // Group wine items by sub-type
-    const WINE_GROUPS = ['White', 'Red', 'Rosé'];
-    const isWine = activeCategory === 'wine';
-    const wineTypeMap = {
-      White: ['Chardonnay','Sauvignon Blanc','Pinot Gris','Riesling','Pinot Grigio'],
-      Red:   ['Cabernet Sauvignon','Shiraz / Syrah','Merlot','Pinot Noir'],
-      Rosé:  ['Rosé'],
+    const WINE_TYPE_GROUP = {
+      'Chardonnay':'White','Sauvignon Blanc':'White','Pinot Gris':'White','Riesling':'White','Pinot Grigio':'White',
+      'Cabernet Sauvignon':'Red','Shiraz / Syrah':'Red','Merlot':'Red','Pinot Noir':'Red',
+      'Rosé':'Rosé',
     };
-    function wineGroup(item) {
-      for (const [group, types] of Object.entries(wineTypeMap)) {
-        if (types.includes(item.type)) return group;
-      }
-      return 'Other';
-    }
 
-    async function handleKeep(item, checked) {
+    async function handleKeepToggle(item, checked) {
       setMyKeeps(prev => ({ ...prev, [item.id]: checked }));
       try { await toggleKeep(residentName, item.id, checked); } catch(e) {}
     }
 
-    function renderCurrentItems(items) {
-      return items.map(item => {
-        const kept = !!myKeeps[item.id];
-        return (
-          <div key={item.id} style={S.currentRow}>
-            <div style={{ flex:1 }}>
-              <strong style={{ color:'#2C1A0E', fontSize:14 }}>{item.name}</strong>
-              <span style={{ color:'#888', fontSize:12, marginLeft:8 }}>{item.current_bar_price}</span>
-            </div>
-            <label style={S.keepLabel}>
-              <input type="checkbox" checked={kept} onChange={e => handleKeep(item, e.target.checked)}
-                style={{ marginRight:5, accentColor:'#4CAF50' }} />
-              <span style={{ color: kept ? '#2d5a2d' : '#888', fontWeight: kept ? 600 : 400 }}>
-                {kept ? '✓ Keep' : 'Keep'}
-              </span>
-            </label>
-            {!kept && (
-              <button style={S.replaceBtn} onClick={() => openForm('replace', item)}>
-                ↔ Replace
-              </button>
-            )}
-          </div>
-        );
-      });
-    }
-
-    function openForm(mode, replacingItem = null) {
-      setInlineForm({ mode, replacingId: replacingItem?.id || null, replacingName: replacingItem?.name || null });
-      setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' });
-    }
-
-    function closeForm() {
+    async function handleAddSuggestion(cat, suggestion) {
+      const rangeObj = PRICE_RANGES[cat].find(r => r.label === suggestion.priceRange);
+      const tempId = `local-${Date.now()}`;
+      const newEntry = { ...suggestion, id: tempId, category: cat, price: rangeObj?.range || '', saved: false };
+      setSuggestions(prev => ({ ...prev, [cat]: [...prev[cat], newEntry] }));
       setInlineForm(null);
       setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' });
+      // Save to DB immediately
+      const saved = await saveSuggestionLive(cat, newEntry);
+      if (saved) {
+        setSuggestions(prev => ({
+          ...prev,
+          [cat]: prev[cat].map(s => s.id === tempId ? { ...s, id: saved.id, saved: true } : s)
+        }));
+      }
     }
 
-    function addLocalSuggestionInline() {
-      const { name, type, priceRange, notes } = currentSuggestion;
-      if (!name || !type || !priceRange) return;
-      const rangeObj = PRICE_RANGES[activeCategory].find(r => r.label === priceRange);
-      setSuggestions(prev => ({
-        ...prev,
-        [activeCategory]: [...prev[activeCategory], {
-          id: `local-${Date.now()}`, name, type, priceRange,
-          price: rangeObj?.range || '', notes, suggestedBy: residentName,
-          isReplacement: inlineForm?.mode === 'replace',
-          replacingName: inlineForm?.replacingName || null,
-        }],
-      }));
-      closeForm();
+    async function handleDeleteSuggestion(cat, suggestion) {
+      setSuggestions(prev => ({ ...prev, [cat]: prev[cat].filter(s => s.id !== suggestion.id) }));
+      if (suggestion.saved !== false) {
+        await deleteSuggestionLive(suggestion.id);
+      }
     }
+
+    const totalKeeps = Object.values(myKeeps).filter(Boolean).length;
+    const totalSuggestionsAll = CATEGORIES.reduce((n, c) => n + (suggestions[c]?.length || 0), 0);
 
     return (
       <div style={S.root}>
@@ -441,115 +419,173 @@ export default function PaynterBarSurvey() {
         <div style={S.topBar}>
           <div>
             <h1 style={S.topTitle}>Paynter Bar Survey</h1>
-            <p style={S.topSub}>Phase 1 — Suggest Your Drinks</p>
+            <p style={S.topSub}>Phase 1 — Your Drink Preferences</p>
           </div>
           <div style={S.nameBadge}>👤 {residentName}</div>
         </div>
 
-        <GroupedTabs withBadgeFrom={suggestions} />
-
-        <div style={{ ...S.card, ...(isZero(activeCategory) ? S.cardZero : {}) }}>
-          <h3 style={S.cardTitle}>{CAT_EMOJI[activeCategory]} {CAT_LABELS[activeCategory]}</h3>
-
-          {/* Current stock list */}
-          {currentItems.length > 0 && (
-            <>
-              <div style={S.sectionHead}>Currently stocked</div>
-              {isWine ? (
-                WINE_GROUPS.map(group => {
-                  const groupItems = currentItems.filter(i => wineGroup(i) === group);
-                  if (!groupItems.length) return null;
-                  return (
-                    <div key={group}>
-                      <div style={S.wineGroupHead}>{group}</div>
-                      {renderCurrentItems(groupItems)}
-                    </div>
-                  );
-                })
-              ) : renderCurrentItems(currentItems)}
-            </>
-          )}
-
-          {/* My suggestions for this category */}
-          {mySuggestions.length > 0 && (
-            <>
-              <div style={{ ...S.sectionHead, marginTop:14 }}>Your suggestions</div>
-              {mySuggestions.map(s => (
-                <div key={s.id} style={S.suggRow}>
-                  <div style={{ flex:1 }}>
-                    <strong style={{ color:'#2C1A0E' }}>{s.name}</strong>
-                    <Tag>{s.type}</Tag>
-                    <Tag gold>{s.priceRange} · {s.price}</Tag>
-                    {s.isReplacement && s.replacingName && <Tag>replaces {s.replacingName}</Tag>}
-                    {s.notes && <p style={{ margin:'3px 0 0', fontSize:12, color:'#888' }}>{s.notes}</p>}
-                  </div>
-                  <button style={S.removeBtn} onClick={() => setSuggestions(prev => ({ ...prev, [activeCategory]:prev[activeCategory].filter(x => x.id!==s.id) }))}>✕</button>
-                </div>
-              ))}
-            </>
-          )}
-
-          {/* Inline suggestion form */}
-          {inlineForm && (
-            <div style={S.inlineForm}>
-              <div style={S.inlineFormTitle}>
-                {inlineForm.mode === 'replace'
-                  ? `Suggest a replacement for ${inlineForm.replacingName}`
-                  : `Add a new ${CAT_LABELS[activeCategory]}`}
-                <button style={S.closeFormBtn} onClick={closeForm}>✕</button>
-              </div>
-              <div style={S.formGrid}>
-                <div>
-                  <label style={S.label}>Brand / Name *</label>
-                  <input style={S.input} value={currentSuggestion.name} placeholder={PLACEHOLDERS[activeCategory]}
-                    onChange={e => setCurrentSuggestion(p => ({ ...p, name:e.target.value }))} />
-                </div>
-                <div>
-                  <label style={S.label}>Type *</label>
-                  <select style={S.input} value={currentSuggestion.type}
-                    onChange={e => setCurrentSuggestion(p => ({ ...p, type:e.target.value }))}>
-                    <option value="">Select type...</option>
-                    {TYPE_OPTIONS[activeCategory].map(t => <option key={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={S.label}>Price Range *</label>
-                  <select style={S.input} value={currentSuggestion.priceRange}
-                    onChange={e => setCurrentSuggestion(p => ({ ...p, priceRange:e.target.value }))}>
-                    <option value="">Select range...</option>
-                    {PRICE_RANGES[activeCategory].map(r => (
-                      <option key={r.label} value={r.label}>{r.label} — {r.range}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={S.label}>Notes (optional)</label>
-                  <input style={S.input} placeholder="e.g. great as a house pour..."
-                    value={currentSuggestion.notes}
-                    onChange={e => setCurrentSuggestion(p => ({ ...p, notes:e.target.value }))} />
-                </div>
-              </div>
-              <button style={{ ...S.addBtn, ...(currentSuggestion.name && currentSuggestion.type && currentSuggestion.priceRange ? {} : S.disabled) }}
-                onClick={addLocalSuggestionInline}>+ Add to my list</button>
-            </div>
-          )}
-
-          {/* Add new button */}
-          {!inlineForm && (
-            <button style={S.addNewBtn} onClick={() => openForm('add')}>
-              + Add a new {CAT_LABELS[activeCategory]}
-            </button>
-          )}
+        <div style={{ padding:'10px 14px 0', color:'#888', fontSize:13, textAlign:'center' }}>
+          Tick <strong>Keep</strong> for drinks you want to stay, or <strong>Replace</strong> to suggest an alternative. Add new items with the + button.
         </div>
+
+        {CAT_GROUPS.map(group => (
+          <div key={group.label}>
+            <div style={S.catGroupBanner}>
+              {group.label === 'Zero Alcohol' && <span style={{ ...S.zeroTag, marginRight:8 }}>0%</span>}
+              {group.label}
+            </div>
+            {group.cats.map(cat => {
+              const currentItems = (drinksByCategory[cat] || []).filter(d => d.is_current_stock);
+              const mySuggestions = suggestions[cat] || [];
+              const showInlineForm = inlineForm?.cat === cat;
+
+              function renderItems(items) {
+                // For wine, group by White/Red/Rosé
+                if (cat === 'wine') {
+                  const groups = { White:[], Red:[], Rosé:[], Other:[] };
+                  items.forEach(i => { const g = WINE_TYPE_GROUP[i.type] || 'Other'; groups[g].push(i); });
+                  return ['White','Red','Rosé','Other'].map(g => {
+                    if (!groups[g].length) return null;
+                    return (
+                      <div key={g}>
+                        <div style={S.wineGroupHead}>{g}</div>
+                        {groups[g].map(item => renderItem(item))}
+                      </div>
+                    );
+                  });
+                }
+                return items.map(item => renderItem(item));
+              }
+
+              function renderItem(item) {
+                const kept = !!myKeeps[item.id];
+                return (
+                  <div key={item.id} style={{ ...S.currentRow, ...(kept ? S.currentRowKept : {}) }}>
+                    <div style={{ flex:1 }}>
+                      <strong style={{ color:'#2C1A0E', fontSize:13 }}>{item.name}</strong>
+                      <span style={{ color:'#999', fontSize:12, marginLeft:6 }}>{item.current_bar_price}</span>
+                    </div>
+                    <label style={S.keepLabel}>
+                      <input type="checkbox" checked={kept}
+                        onChange={e => handleKeepToggle(item, e.target.checked)}
+                        style={{ marginRight:4, accentColor:'#4CAF50' }} />
+                      <span style={{ color: kept ? '#2d5a2d' : '#999', fontWeight: kept ? 700 : 400, fontSize:12 }}>
+                        {kept ? '✓ Keep' : 'Keep'}
+                      </span>
+                    </label>
+                    {!kept && (
+                      <button style={S.replaceBtn}
+                        onClick={() => { setInlineForm({ cat, mode:'replace', replacingId:item.id, replacingName:item.name }); setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' }); }}>
+                        ↔ Replace
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div key={cat} style={{ ...S.card, ...(isZero(cat) ? S.cardZero : {}), marginBottom:8 }}>
+                  <div style={S.catCardHead}>
+                    <span>{CAT_EMOJI[cat]} <strong>{CAT_LABELS[cat]}</strong></span>
+                    <span style={{ fontSize:12, color:'#aaa' }}>
+                      {(myKeeps && currentItems.filter(i => myKeeps[i.id]).length > 0) ? `✓ ${currentItems.filter(i => myKeeps[i.id]).length} kept` : ''}
+                      {mySuggestions.length > 0 ? `  ✏️ ${mySuggestions.length} suggested` : ''}
+                    </span>
+                  </div>
+
+                  {currentItems.length > 0 && renderItems(currentItems)}
+
+                  {/* User's suggestions for this category */}
+                  {mySuggestions.length > 0 && (
+                    <div style={{ marginTop:10 }}>
+                      <div style={S.sectionHead}>Your suggestions</div>
+                      {mySuggestions.map(s => (
+                        <div key={s.id} style={S.suggRow}>
+                          <div style={{ flex:1 }}>
+                            <strong style={{ color:'#2C1A0E', fontSize:13 }}>{s.name}</strong>
+                            <Tag>{s.type}</Tag>
+                            <Tag gold>{s.priceRange}</Tag>
+                            {s.isReplacement && s.replacingName && <Tag>replaces {s.replacingName}</Tag>}
+                            {s.saved === false && <span style={{ color:'#aaa', fontSize:11, marginLeft:6 }}>saving...</span>}
+                          </div>
+                          <button style={S.removeBtn} onClick={() => handleDeleteSuggestion(cat, s)}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Inline form */}
+                  {showInlineForm && (
+                    <div style={S.inlineForm}>
+                      <div style={S.inlineFormTitle}>
+                        {inlineForm.mode === 'replace'
+                          ? `Suggest a replacement for ${inlineForm.replacingName}`
+                          : `Add a new ${CAT_LABELS[cat]}`}
+                        <button style={S.closeFormBtn} onClick={() => { setInlineForm(null); setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' }); }}>✕</button>
+                      </div>
+                      <div style={S.formGrid}>
+                        <div>
+                          <label style={S.label}>Brand / Name *</label>
+                          <input style={S.input} value={currentSuggestion.name} placeholder={PLACEHOLDERS[cat]}
+                            onChange={e => setCurrentSuggestion(p => ({ ...p, name:e.target.value }))} />
+                        </div>
+                        <div>
+                          <label style={S.label}>Type *</label>
+                          <select style={S.input} value={currentSuggestion.type}
+                            onChange={e => setCurrentSuggestion(p => ({ ...p, type:e.target.value }))}>
+                            <option value="">Select type...</option>
+                            {TYPE_OPTIONS[cat].map(t => <option key={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={S.label}>Price Range *</label>
+                          <select style={S.input} value={currentSuggestion.priceRange}
+                            onChange={e => setCurrentSuggestion(p => ({ ...p, priceRange:e.target.value }))}>
+                            <option value="">Select range...</option>
+                            {PRICE_RANGES[cat].map(r => (
+                              <option key={r.label} value={r.label}>{r.label} — {r.range}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={S.label}>Notes (optional)</label>
+                          <input style={S.input} placeholder="Any notes..."
+                            value={currentSuggestion.notes}
+                            onChange={e => setCurrentSuggestion(p => ({ ...p, notes:e.target.value }))} />
+                        </div>
+                      </div>
+                      <button
+                        style={{ ...S.addBtn, ...(currentSuggestion.name && currentSuggestion.type && currentSuggestion.priceRange ? {} : S.disabled) }}
+                        onClick={() => handleAddSuggestion(cat, {
+                          name: currentSuggestion.name, type: currentSuggestion.type,
+                          priceRange: currentSuggestion.priceRange, notes: currentSuggestion.notes,
+                          isReplacement: inlineForm.mode === 'replace', replacingName: inlineForm.replacingName || null,
+                        })}>
+                        + Save suggestion
+                      </button>
+                    </div>
+                  )}
+
+                  {!showInlineForm && (
+                    <button style={S.addNewBtn}
+                      onClick={() => { setInlineForm({ cat, mode:'add', replacingId:null, replacingName:null }); setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' }); }}>
+                      + Add a new {CAT_LABELS[cat]}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
 
         {error && <div style={S.errorBox}>{error}</div>}
 
         <div style={S.submitArea}>
           <p style={{ color:'#888', fontSize:13, margin:'0 0 10px' }}>
-            {totalSuggestions === 0 ? 'Add at least one suggestion to submit' : `${totalSuggestions} suggestion${totalSuggestions!==1?'s':''} across all categories`}
+            {totalKeeps} kept · {totalSuggestionsAll} suggestion{totalSuggestionsAll !== 1 ? 's' : ''} added
           </p>
-          <button style={{ ...S.primaryBtn, fontSize:15, padding:'14px 32px', ...(totalSuggestions===0||loading ? S.disabled : {}) }}
-            onClick={() => setPhase('review')}>Review my entries →</button>
+          <button style={{ ...S.primaryBtn, fontSize:15, padding:'14px 32px' }}
+            onClick={() => setPhase('review')}>Review &amp; Submit →</button>
           <button style={{ ...S.ghostBtn, display:'block', margin:'12px auto 0' }} onClick={() => setPhase('home')}>← Back</button>
         </div>
       </div>
@@ -1068,6 +1104,9 @@ const S = {
   inlineFormTitle: { fontSize:13, fontWeight:600, color:'#2C1A0E', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' },
   closeFormBtn: { background:'none', border:'none', color:'#aaa', cursor:'pointer', fontSize:16, padding:'0 4px' },
   keepLabel: { display:'flex', alignItems:'center', fontSize:12, cursor:'pointer', marginLeft:8, whiteSpace:'nowrap', userSelect:'none' },
+  catGroupBanner: { background:'#2C1A0E', color:'#F5E6C8', padding:'8px 16px', fontSize:13, fontWeight:700, letterSpacing:1, textTransform:'uppercase', display:'flex', alignItems:'center' },
+  catCardHead: { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, paddingBottom:8, borderBottom:'1px solid #F0E0C8' },
+  currentRowKept: { background:'#f0f9f0', borderRadius:4 },
   wineGroupHead: { fontSize:11, fontWeight:700, color:'#aaa', textTransform:'uppercase', letterSpacing:1, padding:'8px 0 4px', borderBottom:'1px solid #f0e0c8', marginBottom:4 },
   reviewSection: { borderRadius:8, overflow:'hidden', border:'1px solid #F0E0C8' },
   reviewSectionHead: { background:'#F5ECD8', padding:'8px 12px', fontSize:12, fontWeight:700, color:'#6B3A2A' },
