@@ -1,1176 +1,471 @@
 'use client';
 import { useState, useEffect } from 'react';
-import {
-  supabase, isConnected,
-  getDrinks, addDrink,
-  castVotes, getVoteCounts,
-  toggleKeep, getKeepCounts,
-  submitSurvey, getSubmissionCount,
-  resetVotes, resetSuggestions,
-  getVotingOpen, setVotingOpen,
-} from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 
-// ── Constants ─────────────────────────────────────────────────
+// ── Supabase ──────────────────────────────────────────────────
+const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL
+  ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  : null;
 
-const CATEGORIES = ['wine','sparkling','beer','cider','spirits','liqueur','premix','zerowine','zerobeer','zerospirits'];
-
-const CAT_EMOJI  = { wine:'🍷', sparkling:'🥂', beer:'🍺', cider:'🍏', spirits:'🥃', liqueur:'🍯', premix:'🥤', zerowine:'🫧', zerobeer:'🥛', zerospirits:'🍹' };
-const CAT_LABELS = { wine:'Wine', sparkling:'Sparkling', beer:'Beer', cider:'Cider', spirits:'Spirits', liqueur:'Liqueurs & Fortified', premix:'Premix', zerowine:'Zero Wine', zerobeer:'Zero Beer', zerospirits:'Zero Spirits' };
-
-const CAT_GROUPS = [
-  { label: 'Alcohol',      cats: ['wine','sparkling','beer','cider','spirits','liqueur','premix'] },
-  { label: 'Zero Alcohol', cats: ['zerowine','zerobeer','zerospirits'] },
+// ── Survey Categories ─────────────────────────────────────────
+const CATEGORIES = [
+  { id: 'white_wine',  label: 'White Wine',           emoji: '🥂', options: ['Chardonnay', 'Sauvignon Blanc', 'Pinot Gris/Grigio', 'Riesling'] },
+  { id: 'red_wine',    label: 'Red Wine',              emoji: '🍷', options: ['Shiraz', 'Cabernet Sauvignon', 'Merlot', 'Pinot Noir'] },
+  { id: 'rose',        label: 'Rosé',                  emoji: '🌸', options: ['Rosé'] },
+  { id: 'sparkling',   label: 'Sparkling',             emoji: '🍾', options: ['Prosecco', 'Champagne/Méthode', 'Brut/Dry', 'Piccolo (single serve)'] },
+  { id: 'beer',        label: 'Beer',                  emoji: '🍺', options: ['Mid-strength lager', 'Full-strength lager', 'Pale ale', 'Dark/stout', 'Ginger beer'] },
+  { id: 'cider',       label: 'Cider',                 emoji: '🍏', options: ['Apple', 'Pear', 'Berry/flavoured'] },
+  { id: 'spirits',     label: 'Spirits',               emoji: '🥃', options: ['Gin', 'Rum', 'Whisky/Scotch', 'Bourbon', 'Vodka'] },
+  { id: 'liqueurs',    label: 'Liqueurs & Fortified',  emoji: '🍫', options: ['Baileys/cream liqueur', 'Port'] },
+  { id: 'premix',      label: 'Premix / RTD',          emoji: '🥤', options: ['Bourbon & cola', 'Gin & tonic', 'Vodka mix', 'Rum & cola'] },
+  { id: 'zero',        label: 'Zero Alcohol',          emoji: '0️⃣', options: ['Zero beer', 'Zero wine', 'Zero spirits'] },
 ];
 
-const PRICE_RANGES = {
-  wine:        [{ label:'Budget', range:'$10–$18/btl', order:0 }, { label:'Mid-range', range:'$19–$28/btl', order:1 }, { label:'Premium', range:'$29–$45/btl', order:2 }],
-  sparkling:   [{ label:'Budget', range:'$12–$20/btl', order:0 }, { label:'Mid-range', range:'$21–$35/btl', order:1 }, { label:'Premium', range:'$36–$60/btl', order:2 }],
-  beer:        [{ label:'Value',  range:'$3–$4',       order:0 }, { label:'Standard',  range:'$4–$5',       order:1 }, { label:'Premium', range:'$5–$6',       order:2 }],
-  cider:       [{ label:'Value',  range:'$3–$4',       order:0 }, { label:'Standard',  range:'$4–$5',       order:1 }, { label:'Premium', range:'$5–$6',       order:2 }],
-  spirits:     [{ label:'Budget', range:'Up to $40/btl',order:0},{ label:'Mid-range', range:'$41–$65/btl',  order:1 }, { label:'Premium', range:'$66–$90/btl', order:2 }],
-  liqueur:     [{ label:'Budget', range:'Up to $30/btl',order:0},{ label:'Mid-range', range:'$31–$55/btl',  order:1 }, { label:'Premium', range:'$56–$90/btl', order:2 }],
-  premix:      [{ label:'Value',  range:'$5–$6',       order:0 }, { label:'Standard',  range:'$6–$7',       order:1 }, { label:'Premium', range:'$7–$8',       order:2 }],
-  zerowine:    [{ label:'Budget', range:'$10–$18/btl', order:0 }, { label:'Mid-range', range:'$19–$28/btl', order:1 }, { label:'Premium', range:'$29–$40/btl', order:2 }],
-  zerobeer:    [{ label:'Value',  range:'$3–$4',       order:0 }, { label:'Standard',  range:'$4–$5',       order:1 }, { label:'Premium', range:'$5–$6',       order:2 }],
-  zerospirits: [{ label:'Budget', range:'Up to $30/btl',order:0},{ label:'Mid-range', range:'$31–$50/btl',  order:1 }, { label:'Premium', range:'$51–$70/btl', order:2 }],
-};
+const EMPTY_SELECTIONS = () => Object.fromEntries(CATEGORIES.map(c => [c.id, []]));
+const EMPTY_SUGGESTIONS = () => Object.fromEntries(CATEGORIES.map(c => [c.id, '']));
 
-const RANGE_COLORS = ['#8B6914','#6B3A2A','#4A1942'];
+// ── DB helpers ────────────────────────────────────────────────
+async function saveResponse(selections, suggestions, comment) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('responses')
+    .insert([{ selections, suggestions, comment: comment || null }])
+    .select().single();
+  if (error) throw error;
+  return data;
+}
 
-const TYPE_OPTIONS = {
-  wine:        ['Cabernet Sauvignon','Shiraz / Syrah','Merlot','Pinot Noir','Sauvignon Blanc','Chardonnay','Riesling','Pinot Gris','Rosé','Other'],
-  sparkling:   ['Champagne','Prosecco','Australian Sparkling','Sparkling Rosé','Moscato','Other'],
-  beer:        ['Lager','Pale Ale','Craft Beer','Light Beer','Stout / Porter','IPA','Other'],
-  cider:       ['Apple','Pear','Mixed Berry','Dry','Flavoured','Other'],
-  spirits:     ['Whisky / Bourbon','Gin','Vodka','Rum','Tequila','Brandy / Cognac','Other'],
-  liqueur:     ['Port','Sherry','Muscat','Irish Cream (e.g. Baileys)','Coffee Liqueur','Orange Liqueur','Limoncello','Other'],
-  premix:      ['Bourbon & Cola','Gin & Tonic','Vodka Mix','Rum & Cola','Seltzer / Hard Soda','Ready-to-Drink Wine','Other'],
-  zerowine:    ['Red','White','Rosé','Sparkling','Other'],
-  zerobeer:    ['Lager','Pale Ale','IPA Style','Stout Style','Wheat Beer Style','Other'],
-  zerospirits: ['Gin Alternative','Whisky Alternative','Vodka Alternative','Rum Alternative','Botanical / Aperitif','Other'],
-};
+async function getResponseCount() {
+  if (!supabase) return 0;
+  const { count } = await supabase.from('responses').select('*', { count: 'exact', head: true });
+  return count || 0;
+}
 
-const PLACEHOLDERS = {
-  wine:'e.g. Penfolds Shiraz', sparkling:'e.g. Jansz Premium', beer:'e.g. XXXX Gold',
-  cider:'e.g. Rekorderlig', spirits:'e.g. Hendrick\'s Gin', liqueur:'e.g. Baileys',
-  premix:'e.g. Jack Daniel\'s & Cola', zerowine:'e.g. Giesen 0% Sauv Blanc',
-  zerobeer:'e.g. Great Northern Zero', zerospirits:'e.g. Seedlip Spice 94',
-};
+async function getAllResponses() {
+  if (!supabase) return [];
+  const { data } = await supabase.from('responses').select('*').order('created_at', { ascending: false });
+  return data || [];
+}
 
-const EMPTY_STATE = () => Object.fromEntries(CATEGORIES.map(c => [c, []]));
-const isZero = (cat) => cat.startsWith('zero');
+async function getSurveyOpen() {
+  if (!supabase) return true;
+  const { data } = await supabase.from('settings').select('value').eq('key', 'survey_open').single();
+  return data?.value !== 'false';
+}
+
+async function setSurveyOpen(open) {
+  if (!supabase) return;
+  await supabase.from('settings').upsert({ key: 'survey_open', value: open ? 'true' : 'false' });
+}
 
 // ── Main Component ────────────────────────────────────────────
-
 export default function PaynterBarSurvey() {
-  const [phase, setPhase] = useState('home');
-  const [activeCategory, setActiveCategory] = useState('wine');
-  const [residentName, setResidentName] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-  const [voteSubmitted, setVoteSubmitted] = useState(false);
-  const [adminPin, setAdminPin] = useState('');
+  const [screen, setScreen]           = useState('home');
+  const [selections, setSelections]   = useState(EMPTY_SELECTIONS());
+  const [suggestions, setSuggestions] = useState(EMPTY_SUGGESTIONS());
+  const [comment, setComment]         = useState('');
+  const [responseCount, setResponseCount] = useState(null);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState('');
+  const [surveyOpen, setSurveyOpenState] = useState(true);
+  const [adminPin, setAdminPin]       = useState('');
   const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [votingOpen, setVotingOpenState] = useState(false);
-  const [surveyComment, setSurveyComment] = useState('');
-  const [submissionCount, setSubmissionCount] = useState(null);
+  const [adminData, setAdminData]     = useState(null);
 
-  // Drink data from DB (grouped by category)
-  const [drinksByCategory, setDrinksByCategory] = useState(EMPTY_STATE());
-  const [voteCounts, setVoteCounts] = useState({});
-  const [keepCounts, setKeepCounts] = useState({});
-  const [myKeeps, setMyKeeps] = useState({}); // drink_id -> bool
+  useEffect(() => {
+    getResponseCount().then(setResponseCount);
+    getSurveyOpen().then(setSurveyOpenState);
+  }, []);
 
-  // Local suggestion form
-  const [suggestions, setSuggestions] = useState(EMPTY_STATE());
-  const [currentSuggestion, setCurrentSuggestion] = useState({ name:'', type:'', priceRange:'', notes:'' });
-  const [inlineForm, setInlineForm] = useState(null); // null | { mode: 'replace'|'add', replacingId: id|null }
-
-  // Local vote selections
-  const [votes, setVotes] = useState(EMPTY_STATE());
-
-  // Load drinks and voting status on mount
-  useEffect(() => { loadDrinks(); loadVotingStatus(); loadSubmissionCount(); }, []);
-
-  async function loadSubmissionCount() {
-    const count = await getSubmissionCount();
-    setSubmissionCount(count);
-  }
-
-  async function loadVotingStatus() {
-    const open = await getVotingOpen();
-    setVotingOpenState(open);
-  }
-
-  async function loadDrinks() {
-    if (!isConnected()) return;
-    try {
-      const data = await getDrinks();
-      const grouped = EMPTY_STATE();
-      (data || []).forEach(d => {
-        if (!grouped[d.category]) grouped[d.category] = [];
-        grouped[d.category].push(d);
-      });
-      setDrinksByCategory(grouped);
-    } catch (e) {
-      console.error('loadDrinks error:', e);
-    }
-  }
-
-  async function loadVoteCounts() {
-    if (!isConnected()) return;
-    try {
-      const counts = await getVoteCounts();
-      setVoteCounts(counts || {});
-    } catch (e) {
-      console.error('loadVoteCounts error:', e);
-    }
-  }
-
-  // ── Suggestions ─────────────────────────────────────────────
-
-  function addLocalSuggestion() {
-    const { name, type, priceRange, notes } = currentSuggestion;
-    if (!name || !type || !priceRange) return;
-    const rangeObj = PRICE_RANGES[activeCategory].find(r => r.label === priceRange);
-    setSuggestions(prev => ({
-      ...prev,
-      [activeCategory]: [...prev[activeCategory], {
-        id: `local-${Date.now()}`, name, type, priceRange,
-        price: rangeObj?.range || '', notes, suggestedBy: residentName,
-      }],
-    }));
-    setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' });
-  }
-
-  async function saveSuggestionLive(cat, suggestion) {
-    try {
-      const rangeObj = PRICE_RANGES[cat].find(r => r.label === suggestion.priceRange);
-      const saved = await addDrink({
-        category: cat, name: suggestion.name, type: suggestion.type,
-        price_range: suggestion.priceRange, price_range_order: rangeObj?.order ?? 1,
-        price: suggestion.price, suggested_by: residentName,
-        notes: suggestion.notes || null, is_seed: false,
-      });
-      return saved; // returns DB row with real id
-    } catch (e) {
-      console.error('saveSuggestionLive error:', e);
-      return null;
-    }
-  }
-
-  async function deleteSuggestionLive(drinkId) {
-    try {
-      if (!supabase) return;
-      await supabase.from('drinks').delete().eq('id', drinkId);
-    } catch (e) {
-      console.error('deleteSuggestionLive error:', e);
-    }
-  }
-
-  async function submitSuggestions() {
-    setLoading(true); setError('');
-    try {
-      await submitSurvey(residentName, surveyComment);
-      await loadDrinks();
-      await loadSubmissionCount();
-      setSubmitted(true);
-    } catch (e) {
-      setError('Could not finalise. Please try again.');
-    }
-    setLoading(false);
-  }
-
-  // ── Votes ────────────────────────────────────────────────────
-
-  function toggleVote(cat, id) {
-    setVotes(prev => {
-      const cv = prev[cat];
-      return { ...prev, [cat]: cv.includes(id) ? cv.filter(v => v !== id) : [...cv, id] };
+  function toggleOption(catId, option) {
+    setSelections(prev => {
+      const current = prev[catId] || [];
+      return { ...prev, [catId]: current.includes(option) ? current.filter(o => o !== option) : [...current, option] };
     });
   }
 
-  async function submitVotes() {
+  const totalSelections = Object.values(selections).flat().length;
+
+  async function handleSubmit() {
     setLoading(true); setError('');
     try {
-      const allIds = Object.values(votes).flat();
-      if (allIds.length > 0) {
-        await castVotes(residentName, allIds);
-      }
-      await loadVoteCounts();
-      setVoteSubmitted(true);
+      await saveResponse(selections, suggestions, comment);
+      const count = await getResponseCount();
+      setResponseCount(count);
+      setScreen('success');
     } catch (e) {
-      setError('Could not save votes. Please try again.');
+      setError('Could not save your response. Please try again.');
     }
     setLoading(false);
   }
 
-  // ── Admin ────────────────────────────────────────────────────
-
-  async function handleAdminReset(type) {
-    if (!confirm(`Reset all ${type}? This cannot be undone.`)) return;
+  async function enterAdmin() {
+    if (adminPin !== '1234') { alert('Incorrect PIN'); return; }
     setLoading(true);
-    try {
-      if (type === 'votes') await resetVotes();
-      if (type === 'suggestions') await resetSuggestions();
-      await loadDrinks();
-      await loadVoteCounts();
-    } catch (e) {
-      setError('Reset failed.');
-    }
+    const responses = await getAllResponses();
+    setAdminData(responses);
     setLoading(false);
+    setScreen('admin');
   }
-
-  // ── Enter results view ───────────────────────────────────────
-
-  function enterResults() {
-    loadVoteCounts();
-    getKeepCounts().then(c => setKeepCounts(c));
-    setPhase('results');
-  }
-
-  // ── Totals ───────────────────────────────────────────────────
-
-  const totalSuggestions = Object.values(suggestions).flat().length;
-  const totalVotes = Object.values(votes).flat().length;
-
-  // ── Shared sub-components ────────────────────────────────────
-
-  function GroupedTabs({ withBadgeFrom }) {
-    return (
-      <div style={S.tabsOuter}>
-        {CAT_GROUPS.map(group => (
-          <div key={group.label} style={S.tabGroup}>
-            <div style={S.tabGroupLabel}>
-              {group.label === 'Zero Alcohol' && <span style={S.zeroTag}>0%</span>}
-              {group.label}
-            </div>
-            <div style={S.tabsScroll}>
-              {group.cats.map(cat => {
-                const count = withBadgeFrom ? (withBadgeFrom[cat]?.length || 0) : 0;
-                return (
-                  <button key={cat}
-                    style={{ ...S.tab, ...(activeCategory===cat ? S.tabActive : {}), ...(isZero(cat) ? S.tabZero : {}), ...(activeCategory===cat && isZero(cat) ? S.tabZeroActive : {}) }}
-                    onClick={() => setActiveCategory(cat)}>
-                    <span>{CAT_EMOJI[cat]}</span>
-                    <span style={S.tabLabel}>{CAT_LABELS[cat]}</span>
-                    {count > 0 && <span style={S.badge}>{count}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  function PriceBadges() {
-    return (
-      <div style={S.priceRow}>
-        {isZero(activeCategory) && (
-          <div style={S.zeroNotice}>🫧 Zero-alcohol options — all the flavour, none of the alcohol</div>
-        )}
-        {PRICE_RANGES[activeCategory].map((r, i) => (
-          <div key={r.label} style={{ ...S.priceChip, background: RANGE_COLORS[i] }}>
-            <strong>{r.label}</strong><br/><span style={{ fontSize:10 }}>{r.range}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  const dbWarning = !isConnected() && (
-    <div style={S.demoBar}>⚠️ Demo mode — Supabase not connected. Votes won't be saved across devices.</div>
-  );
 
   // ── HOME ──────────────────────────────────────────────────────
-
-  if (phase === 'home') return (
+  if (screen === 'home') return (
     <div style={S.root}>
-      {dbWarning}
       <div style={S.hero}>
-        <div style={{ fontSize:56 }}>🍷</div>
+        <div style={S.heroIcon}>🍷</div>
         <h1 style={S.heroTitle}>Paynter Bar</h1>
-        <p style={S.heroSub}>Drink Selection Survey</p>
-        <p style={S.heroDesc}>Help us choose what to stock — your favourites, your price range, your call.</p>
-        {submissionCount > 0 && (
-          <div style={S.participationBadge}>
-            👥 {submissionCount} resident{submissionCount !== 1 ? 's' : ''} have completed the survey
-          </div>
+        <p style={S.heroSub}>Drink Preference Survey</p>
+        <p style={S.heroDesc}>Help us choose what to stock. Tick everything you enjoy — we want to hear from you.</p>
+        {responseCount > 0 && (
+          <div style={S.countBadge}>👥 {responseCount} resident{responseCount !== 1 ? 's' : ''} have responded</div>
         )}
       </div>
+
       <div style={S.card}>
-        <h2 style={S.cardTitle}>How this survey works</h2>
-        <p style={S.instrText}>We're giving residents a say in what we stock at the Paynter Bar. The survey runs in two phases:</p>
-        <div style={S.instrRow}>
-          <div style={S.instrPhase}>
-            <span style={S.instrIcon}>✏️</span>
-            <div>
-              <strong style={S.instrLabel}>Phase 1 — Suggest <span style={S.instrStatus}>open now</span></strong>
-              <p style={S.instrDesc}>Browse the categories and suggest drinks you'd love to see on the menu. You can see what we currently stock and what new options might cost at the bar. Add as many suggestions as you like across any category.</p>
-            </div>
-          </div>
-          <div style={S.instrPhase}>
-            <span style={S.instrIcon}>✅</span>
-            <div>
-              <strong style={S.instrLabel}>Phase 2 — Vote <span style={{ ...S.instrStatus, ...S.instrStatusSoon }}>coming soon</span></strong>
-              <p style={S.instrDesc}>Once we've collected all suggestions, we'll open up voting. You'll be able to vote for your favourites from the full compiled list. The most popular drinks will be considered for the menu.</p>
-            </div>
-          </div>
+        <h2 style={S.cardTitle}>How it works</h2>
+        <p style={S.instrText}>Browse each drink category and tick the styles you enjoy or would like to see at the bar. You can also suggest specific brands. Anonymous — no name needed.</p>
+        <div style={S.catPreview}>
+          {CATEGORIES.map(c => (
+            <span key={c.id} style={S.catChip}>{c.emoji} {c.label}</span>
+          ))}
         </div>
-        <p style={{ ...S.instrText, marginTop:12, fontStyle:'italic', color:'#999' }}>Enter your name or unit number below to get started.</p>
       </div>
 
       <div style={S.card}>
-        <h2 style={S.cardTitle}>Let's get started</h2>
-        <label style={S.label}>Your name or unit number</label>
-        <input style={S.input} placeholder="e.g. Margaret · Unit 42..."
-          value={residentName} onChange={e => setResidentName(e.target.value)}
-          onKeyDown={e => e.key==='Enter' && residentName.trim() && setPhase('suggest')} />
-        <div style={S.phaseBtns}>
-          <button style={{ ...S.phaseBtn, ...(residentName.trim() ? {} : S.disabled) }}
-            onClick={() => residentName.trim() && setPhase('suggest')}>
-            <span style={{ fontSize:28 }}>✏️</span>
-            <strong>Phase 1</strong>
-            <small>Suggest drinks</small>
-          </button>
-          <button style={{ ...S.phaseBtn, ...(!votingOpen ? S.phaseBtnLocked : {}), ...(residentName.trim() && votingOpen ? {} : S.disabled) }}
-            onClick={() => residentName.trim() && votingOpen && setPhase('vote')}>
-            <span style={{ fontSize:28 }}>{votingOpen ? '✅' : '🔒'}</span>
-            <strong>Phase 2</strong>
-            <small>{votingOpen ? 'Vote on the list' : 'Voting not open yet'}</small>
-          </button>
-        </div>
-        <div style={{ textAlign:'center', marginTop:14 }}>
-          <button style={S.ghostBtn} onClick={() => setShowAdminLogin(v => !v)}>🔒 Admin / Results</button>
+        {surveyOpen ? (
+          <button style={S.startBtn} onClick={() => setScreen('survey')}>Start Survey →</button>
+        ) : (
+          <div style={{ textAlign:'center', color:'#aaa', padding:'16px 0' }}>
+            <div style={{ fontSize:32 }}>🔒</div>
+            <p style={{ fontFamily:'sans-serif', fontSize:14 }}>The survey is currently closed.</p>
+          </div>
+        )}
+        <div style={{ textAlign:'center', marginTop:16 }}>
+          <button style={S.ghostBtn} onClick={() => setShowAdminLogin(v => !v)}>🔒 Admin</button>
         </div>
         {showAdminLogin && (
           <div style={S.adminBox}>
-            <label style={S.label}>Admin PIN</label>
-            <input style={S.input} type="password" placeholder="Enter PIN..."
-              value={adminPin} onChange={e => setAdminPin(e.target.value)} />
-            <button style={S.primaryBtn} onClick={() => {
-              if (adminPin === '1234') enterResults();
-              else alert('Incorrect PIN');
-            }}>View Results</button>
+            <input style={{ ...S.input, marginBottom:0 }} type="password" placeholder="PIN" value={adminPin}
+              onChange={e => setAdminPin(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && enterAdmin()} />
+            <button style={{ ...S.primaryBtn, width:'auto', padding:'10px 20px' }} onClick={enterAdmin}>Enter</button>
           </div>
         )}
       </div>
     </div>
   );
 
-  // ── PHASE 1 — SUGGEST ─────────────────────────────────────────
-
-  if (phase === 'suggest') {
-    if (submitted) return (
-      <div style={S.root}>
-        <div style={S.successCard}>
-          <div style={{ fontSize:64 }}>🎉</div>
-          <h2 style={{ ...S.heroTitle, color:'#2C1A0E' }}>Thanks, {residentName}!</h2>
-          <p style={{ color:'#666', marginBottom:24 }}>
-            Your suggestions have been saved. We'll let you know when voting opens — watch for communication on when voting commences!
-          </p>
-          <button style={S.primaryBtn}
-            onClick={() => { setPhase('home'); setSubmitted(false); setSuggestions(EMPTY_STATE()); setResidentName(''); }}>
-            ← Back to start
-          </button>
+  // ── SURVEY ────────────────────────────────────────────────────
+  if (screen === 'survey') return (
+    <div style={S.root}>
+      <div style={S.topBar}>
+        <div>
+          <h1 style={S.topTitle}>Paynter Bar Survey</h1>
+          <p style={S.topSub}>Tick everything you enjoy or would like to see stocked</p>
         </div>
+        <div style={S.progressBadge}>{totalSelections} selected</div>
       </div>
-    );
 
-    const WINE_TYPE_GROUP = {
-      'Chardonnay':'White','Sauvignon Blanc':'White','Pinot Gris':'White','Riesling':'White','Pinot Grigio':'White',
-      'Cabernet Sauvignon':'Red','Shiraz / Syrah':'Red','Merlot':'Red','Pinot Noir':'Red',
-      'Rosé':'Rosé',
-    };
-
-    async function handleKeepToggle(item, checked) {
-      setMyKeeps(prev => ({ ...prev, [item.id]: checked }));
-      try { await toggleKeep(residentName, item.id, checked); } catch(e) {}
-    }
-
-    async function handleAddSuggestion(cat, suggestion) {
-      const rangeObj = PRICE_RANGES[cat].find(r => r.label === suggestion.priceRange);
-      const tempId = `local-${Date.now()}`;
-      const newEntry = { ...suggestion, id: tempId, category: cat, price: rangeObj?.range || '', saved: false };
-      setSuggestions(prev => ({ ...prev, [cat]: [...prev[cat], newEntry] }));
-      setInlineForm(null);
-      setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' });
-      // Save to DB immediately
-      const saved = await saveSuggestionLive(cat, newEntry);
-      if (saved) {
-        setSuggestions(prev => ({
-          ...prev,
-          [cat]: prev[cat].map(s => s.id === tempId ? { ...s, id: saved.id, saved: true } : s)
-        }));
-      }
-    }
-
-    async function handleDeleteSuggestion(cat, suggestion) {
-      setSuggestions(prev => ({ ...prev, [cat]: prev[cat].filter(s => s.id !== suggestion.id) }));
-      if (suggestion.saved !== false) {
-        await deleteSuggestionLive(suggestion.id);
-      }
-    }
-
-    const totalKeeps = Object.values(myKeeps).filter(Boolean).length;
-    const totalSuggestionsAll = CATEGORIES.reduce((n, c) => n + (suggestions[c]?.length || 0), 0);
-
-    return (
-      <div style={S.root}>
-        {dbWarning}
-        <div style={S.topBar}>
-          <div>
-            <h1 style={S.topTitle}>Paynter Bar Survey</h1>
-            <p style={S.topSub}>Phase 1 — Your Drink Preferences</p>
-          </div>
-          <div style={S.nameBadge}>👤 {residentName}</div>
-        </div>
-
-        <div style={{ padding:'10px 14px 0', color:'#888', fontSize:13, textAlign:'center' }}>
-          Tick <strong>Keep</strong> for drinks you want to stay, or <strong>Replace</strong> to suggest an alternative. Add new items with the + button.
-        </div>
-
-        {CAT_GROUPS.map(group => (
-          <div key={group.label}>
-            <div style={S.catGroupBanner}>
-              {group.label === 'Zero Alcohol' && <span style={{ ...S.zeroTag, marginRight:8 }}>0%</span>}
-              {group.label}
+      {CATEGORIES.map(cat => {
+        const catSelections = selections[cat.id] || [];
+        const catSuggestion = suggestions[cat.id] || '';
+        const hasActivity = catSelections.length > 0 || catSuggestion;
+        return (
+          <div key={cat.id} style={{ ...S.catCard, ...(hasActivity ? S.catCardActive : {}) }}>
+            <div style={S.catHeader}>
+              <span style={S.catEmoji}>{cat.emoji}</span>
+              <span style={S.catLabel}>{cat.label}</span>
+              {catSelections.length > 0 && (
+                <span style={S.catBadge}>{catSelections.length} ✓</span>
+              )}
             </div>
-            {group.cats.map(cat => {
-              const currentItems = (drinksByCategory[cat] || []).filter(d => d.is_current_stock);
-              const mySuggestions = suggestions[cat] || [];
-              const showInlineForm = inlineForm?.cat === cat;
-
-              function renderItems(items) {
-                // For wine, group by White/Red/Rosé
-                if (cat === 'wine') {
-                  const groups = { White:[], Red:[], Rosé:[], Other:[] };
-                  items.forEach(i => { const g = WINE_TYPE_GROUP[i.type] || 'Other'; groups[g].push(i); });
-                  return ['White','Red','Rosé','Other'].map(g => {
-                    if (!groups[g].length) return null;
-                    return (
-                      <div key={g}>
-                        <div style={S.wineGroupHead}>{g}</div>
-                        {groups[g].map(item => renderItem(item))}
-                      </div>
-                    );
-                  });
-                }
-                return items.map(item => renderItem(item));
-              }
-
-              function renderItem(item) {
-                const kept = !!myKeeps[item.id];
+            <div style={S.optionsGrid}>
+              {cat.options.map(opt => {
+                const checked = catSelections.includes(opt);
                 return (
-                  <div key={item.id} style={{ ...S.currentRow, ...(kept ? S.currentRowKept : {}) }}>
-                    <div style={{ flex:1 }}>
-                      <strong style={{ color:'#2C1A0E', fontSize:13 }}>{item.name}</strong>
-                      <span style={{ color:'#999', fontSize:12, marginLeft:6 }}>{item.current_bar_price}</span>
-                    </div>
-                    <label style={S.keepLabel}>
-                      <input type="checkbox" checked={kept}
-                        onChange={e => handleKeepToggle(item, e.target.checked)}
-                        style={{ marginRight:4, accentColor:'#4CAF50' }} />
-                      <span style={{ color: kept ? '#2d5a2d' : '#999', fontWeight: kept ? 700 : 400, fontSize:12 }}>
-                        {kept ? '✓ Keep' : 'Keep'}
-                      </span>
-                    </label>
-                    {!kept && (
-                      <button style={S.replaceBtn}
-                        onClick={() => { setInlineForm({ cat, mode:'replace', replacingId:item.id, replacingName:item.name }); setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' }); }}>
-                        ↔ Replace
-                      </button>
-                    )}
-                  </div>
-                );
-              }
-
-              return (
-                <div key={cat} style={{ ...S.card, ...(isZero(cat) ? S.cardZero : {}), marginBottom:8 }}>
-                  <div style={S.catCardHead}>
-                    <span>{CAT_EMOJI[cat]} <strong>{CAT_LABELS[cat]}</strong></span>
-                    <span style={{ fontSize:12, color:'#aaa' }}>
-                      {(myKeeps && currentItems.filter(i => myKeeps[i.id]).length > 0) ? `✓ ${currentItems.filter(i => myKeeps[i.id]).length} kept` : ''}
-                      {mySuggestions.length > 0 ? `  ✏️ ${mySuggestions.length} suggested` : ''}
-                    </span>
-                  </div>
-
-                  {currentItems.length > 0 && renderItems(currentItems)}
-
-                  {/* User's suggestions for this category */}
-                  {mySuggestions.length > 0 && (
-                    <div style={{ marginTop:10 }}>
-                      <div style={S.sectionHead}>Your suggestions</div>
-                      {mySuggestions.map(s => (
-                        <div key={s.id} style={S.suggRow}>
-                          <div style={{ flex:1 }}>
-                            <strong style={{ color:'#2C1A0E', fontSize:13 }}>{s.name}</strong>
-                            <Tag>{s.type}</Tag>
-                            <Tag gold>{s.priceRange}</Tag>
-                            {s.isReplacement && s.replacingName && <Tag>replaces {s.replacingName}</Tag>}
-                            {s.saved === false && <span style={{ color:'#aaa', fontSize:11, marginLeft:6 }}>saving...</span>}
-                          </div>
-                          <button style={S.removeBtn} onClick={() => handleDeleteSuggestion(cat, s)}>✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Inline form */}
-                  {showInlineForm && (
-                    <div style={S.inlineForm}>
-                      <div style={S.inlineFormTitle}>
-                        {inlineForm.mode === 'replace'
-                          ? `Suggest a replacement for ${inlineForm.replacingName}`
-                          : `Add a new ${CAT_LABELS[cat]}`}
-                        <button style={S.closeFormBtn} onClick={() => { setInlineForm(null); setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' }); }}>✕</button>
-                      </div>
-                      <div style={S.formGrid}>
-                        <div>
-                          <label style={S.label}>Brand / Name *</label>
-                          <input style={S.input} value={currentSuggestion.name} placeholder={PLACEHOLDERS[cat]}
-                            onChange={e => setCurrentSuggestion(p => ({ ...p, name:e.target.value }))} />
-                        </div>
-                        <div>
-                          <label style={S.label}>Type *</label>
-                          <select style={S.input} value={currentSuggestion.type}
-                            onChange={e => setCurrentSuggestion(p => ({ ...p, type:e.target.value }))}>
-                            <option value="">Select type...</option>
-                            {TYPE_OPTIONS[cat].map(t => <option key={t}>{t}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={S.label}>Price Range *</label>
-                          <select style={S.input} value={currentSuggestion.priceRange}
-                            onChange={e => setCurrentSuggestion(p => ({ ...p, priceRange:e.target.value }))}>
-                            <option value="">Select range...</option>
-                            {PRICE_RANGES[cat].map(r => (
-                              <option key={r.label} value={r.label}>{r.label} — {r.range}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={S.label}>Notes (optional)</label>
-                          <input style={S.input} placeholder="Any notes..."
-                            value={currentSuggestion.notes}
-                            onChange={e => setCurrentSuggestion(p => ({ ...p, notes:e.target.value }))} />
-                        </div>
-                      </div>
-                      <button
-                        style={{ ...S.addBtn, ...(currentSuggestion.name && currentSuggestion.type && currentSuggestion.priceRange ? {} : S.disabled) }}
-                        onClick={() => handleAddSuggestion(cat, {
-                          name: currentSuggestion.name, type: currentSuggestion.type,
-                          priceRange: currentSuggestion.priceRange, notes: currentSuggestion.notes,
-                          isReplacement: inlineForm.mode === 'replace', replacingName: inlineForm.replacingName || null,
-                        })}>
-                        + Save suggestion
-                      </button>
-                    </div>
-                  )}
-
-                  {!showInlineForm && (
-                    <button style={S.addNewBtn}
-                      onClick={() => { setInlineForm({ cat, mode:'add', replacingId:null, replacingName:null }); setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' }); }}>
-                      + Add a new {CAT_LABELS[cat]}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-
-        {error && <div style={S.errorBox}>{error}</div>}
-
-        <div style={S.submitArea}>
-          <p style={{ color:'#888', fontSize:13, margin:'0 0 10px' }}>
-            {totalKeeps} kept · {totalSuggestionsAll} suggestion{totalSuggestionsAll !== 1 ? 's' : ''} added
-          </p>
-          <button style={{ ...S.primaryBtn, fontSize:15, padding:'14px 32px' }}
-            onClick={() => setPhase('review')}>Review &amp; Submit →</button>
-          <button style={{ ...S.ghostBtn, display:'block', margin:'12px auto 0' }} onClick={() => setPhase('home')}>← Back</button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── REVIEW ────────────────────────────────────────────────────
-
-  if (phase === 'review') {
-    const keptItems = CATEGORIES.flatMap(cat =>
-      (drinksByCategory[cat] || [])
-        .filter(d => d.is_current_stock && myKeeps[d.id])
-        .map(d => ({ ...d, category: cat }))
-    );
-
-    const allSuggestions = CATEGORIES.flatMap(cat =>
-      (suggestions[cat] || []).map(s => ({ ...s, category: cat }))
-    );
-
-    return (
-      <div style={S.root}>
-        {dbWarning}
-        <div style={S.topBar}>
-          <div>
-            <h1 style={S.topTitle}>Paynter Bar Survey</h1>
-            <p style={S.topSub}>Review Your Entries</p>
-          </div>
-          <div style={S.nameBadge}>👤 {residentName}</div>
-        </div>
-
-        <div style={S.card}>
-          <h3 style={S.cardTitle}>📋 Your survey summary</h3>
-          <p style={{ color:'#888', fontSize:13, margin:'0 0 16px' }}>
-            Check everything looks right before submitting. Go back to make changes.
-          </p>
-
-          {/* Keeps section */}
-          {keptItems.length > 0 && (
-            <div style={S.reviewSection}>
-              <div style={S.reviewSectionHead}>✓ Items you want to keep ({keptItems.length})</div>
-              {keptItems.map(item => (
-                <div key={item.id} style={S.reviewRow}>
-                  <span style={S.reviewCat}>{CAT_EMOJI[item.category] || '🍷'} {CAT_LABELS[item.category] || 'Wine'}</span>
-                  <span style={S.reviewName}>{item.name}</span>
-                  <span style={{ ...S.reviewBadge, background:'#e8f0e8', color:'#2d5a2d' }}>Keep</span>
-                  <button style={S.reviewDeleteBtn} onClick={async () => {
-                    setMyKeeps(prev => { const n = { ...prev }; delete n[item.id]; return n; });
-                    try { await toggleKeep(residentName, item.id, false); } catch(e) {}
-                  }}>✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Suggestions section */}
-          {allSuggestions.length > 0 && (
-            <div style={{ ...S.reviewSection, marginTop: keptItems.length ? 16 : 0 }}>
-              <div style={S.reviewSectionHead}>✏️ Your suggestions ({allSuggestions.length})</div>
-              {allSuggestions.map(s => (
-                <div key={s.id} style={S.reviewRow}>
-                  <span style={S.reviewCat}>{CAT_EMOJI[s.category]} {CAT_LABELS[s.category]}</span>
-                  <span style={S.reviewName}>
-                    {s.name}
-                    {s.isReplacement && s.replacingName && (
-                      <span style={{ color:'#aaa', fontWeight:400, fontSize:11 }}> — replaces {s.replacingName}</span>
-                    )}
-                  </span>
-                  <span style={{ ...S.reviewBadge, background:'#f5e6c8', color:'#8B4513' }}>{s.priceRange}</span>
-                  <button style={S.reviewDeleteBtn} onClick={() =>
-                    setSuggestions(prev => ({
-                      ...prev,
-                      [s.category]: prev[s.category].filter(x => x.id !== s.id)
-                    }))
-                  }>✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {keptItems.length === 0 && allSuggestions.length === 0 && (
-            <p style={{ color:'#aaa', fontStyle:'italic', fontSize:13 }}>Nothing recorded yet — go back and add some suggestions.</p>
-          )}
-
-          {/* Comments box */}
-          <div style={{ marginTop:20, paddingTop:16, borderTop:'1px solid #F0E0C8' }}>
-            <label style={S.label}>💬 Anything else you'd like us to know? (optional)</label>
-            <textarea style={{ ...S.input, height:80, resize:'vertical', fontFamily:'inherit' }}
-              placeholder="e.g. Would love a happy hour on Fridays, or more low-alcohol options..."
-              value={surveyComment}
-              onChange={e => setSurveyComment(e.target.value)} />
-          </div>
-        </div>
-
-        {error && <div style={S.errorBox}>{error}</div>}
-
-        <div style={S.submitArea}>
-          <button style={{ ...S.primaryBtn, fontSize:15, padding:'14px 32px', ...(totalSuggestions===0||loading ? S.disabled : {}) }}
-            onClick={submitSuggestions}>{loading ? 'Saving...' : '✓ Confirm & Submit →'}</button>
-          <button style={{ ...S.ghostBtn, display:'block', margin:'12px auto 0' }} onClick={() => setPhase('suggest')}>← Back to edit</button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── PHASE 2 — VOTE ────────────────────────────────────────────
-
-  if (phase === 'vote') {
-    if (voteSubmitted) return (
-      <div style={S.root}>
-        <div style={S.successCard}>
-          <div style={{ fontSize:64 }}>🥂</div>
-          <h2 style={{ ...S.heroTitle, color:'#2C1A0E' }}>Cheers, {residentName}!</h2>
-          <p style={{ color:'#666', marginBottom:24 }}>
-            Your {totalVotes} vote{totalVotes!==1?'s':''} have been recorded. We'll announce results at the bar soon!
-          </p>
-          <button style={S.primaryBtn} onClick={() => { setPhase('home'); setVoteSubmitted(false); setVotes(EMPTY_STATE()); setResidentName(''); }}>Done</button>
-        </div>
-      </div>
-    );
-
-    return (
-      <div style={S.root}>
-        {dbWarning}
-        <div style={S.topBar}>
-          <div>
-            <h1 style={S.topTitle}>Paynter Bar Survey</h1>
-            <p style={S.topSub}>Phase 2 — Vote for Your Favourites</p>
-          </div>
-          <div style={S.nameBadge}>👤 {residentName}</div>
-        </div>
-        <p style={{ color:'#666', fontSize:13, margin:'12px 16px 0', textAlign:'center' }}>
-          Tick as many as you like — the most popular make it onto the menu!
-        </p>
-
-        <GroupedTabs withBadgeFrom={votes} />
-        <PriceBadges />
-
-        {PRICE_RANGES[activeCategory].map((range, ri) => {
-          const items = (drinksByCategory[activeCategory] || []).filter(i => i.price_range === range.label);
-          if (!items.length) return null;
-          return (
-            <div key={range.label} style={{ ...S.card, ...(isZero(activeCategory) ? S.cardZero : {}) }}>
-              <h3 style={{ ...S.cardTitle, borderLeft:`4px solid ${RANGE_COLORS[ri]}`, paddingLeft:10, margin:'0 0 12px' }}>
-                {range.label} · {range.range}
-              </h3>
-              {items.map(item => {
-                const checked = (votes[activeCategory] || []).includes(item.id);
-                return (
-                  <div key={item.id} style={{ ...S.voteRow, ...(checked ? S.voteRowOn : {}) }} onClick={() => toggleVote(activeCategory, item.id)}>
-                    <div style={{ ...S.checkbox, ...(checked ? S.checkOn : {}) }}>{checked ? '✓' : ''}</div>
-                    <div style={{ flex:1 }}>
-                      <strong style={{ color:'#2C1A0E' }}>{item.name}</strong>
-                      <Tag>{item.type}</Tag>
-                      {item.is_current_stock && <Tag onmenu>✓ On menu · {item.current_bar_price}</Tag>}
-                      {!item.is_current_stock && item.retail_price && (
-                        <span style={S.priceCompare}>
-                          <span style={S.retailLabel}>Retail {item.retail_price}</span>
-                          <span style={S.arrowLabel}>→</span>
-                          <span style={S.markupLabel}>Bar ~{item.markup_price}</span>
-                        </span>
-                      )}
-                      {!item.is_current_stock && !item.retail_price && item.current_bar_price && <Tag est>💡 {item.current_bar_price}</Tag>}
-                      {item.suggested_by && !item.is_current_stock && <Tag green>suggested by {item.suggested_by}</Tag>}
-                      {isZero(activeCategory) && <Tag teal>0% alc</Tag>}
-                      {item.notes && <p style={{ margin:'3px 0 0', fontSize:12, color:'#888' }}>{item.notes}</p>}
-                    </div>
-                  </div>
+                  <label key={opt} style={{ ...S.optionLabel, ...(checked ? S.optionLabelChecked : {}) }}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleOption(cat.id, opt)} style={{ display:'none' }} />
+                    <span style={{ ...S.optionCheck, ...(checked ? S.optionCheckChecked : {}) }}>{checked ? '✓' : ''}</span>
+                    <span style={{ ...S.optionText, ...(checked ? { color:'#F5E6C8' } : {}) }}>{opt}</span>
+                  </label>
                 );
               })}
             </div>
-          );
-        })}
-
-        {error && <div style={S.errorBox}>{error}</div>}
-
-        <div style={S.submitArea}>
-          <p style={{ color:'#888', fontSize:13, margin:'0 0 10px' }}>
-            {totalVotes === 0 ? 'Tick your favourites above' : `${totalVotes} vote${totalVotes!==1?'s':''} cast`}
-          </p>
-          <button style={{ ...S.primaryBtn, fontSize:15, padding:'14px 32px', ...(totalVotes===0||loading ? S.disabled : {}) }}
-            onClick={submitVotes}>{loading ? 'Saving...' : 'Submit my votes →'}</button>
-          <button style={{ ...S.ghostBtn, display:'block', margin:'12px auto 0' }} onClick={() => setPhase('home')}>← Back</button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── RESULTS ───────────────────────────────────────────────────
-
-  function downloadTallyCSV() {
-    const rows = [['Category', 'Item', 'Type', 'Status', 'Bar Price', 'Votes', 'Keeps']];
-    CATEGORIES.forEach(cat => {
-      const items = [...(drinksByCategory[cat] || [])];
-      const sorted = items.sort((a, b) => (voteCounts[b.id] || 0) - (voteCounts[a.id] || 0));
-      sorted.forEach(item => {
-        rows.push([
-          CAT_LABELS[cat],
-          item.name,
-          item.type,
-          item.is_current_stock ? 'Current stock' : 'Suggestion',
-          item.current_bar_price || '',
-          voteCounts[item.id] || 0,
-          keepCounts[item.id] || 0,
-        ]);
-      });
-    });
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'paynter-bar-survey-tally.csv'; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <div style={S.root}>
-      {dbWarning}
-      <div style={S.topBar}>
-        <div>
-          <h1 style={S.topTitle}>Paynter Bar — Results</h1>
-          <p style={S.topSub}>Admin View · All Votes</p>
-        </div>
-        <button style={S.ghostBtn} onClick={() => { setPhase('home'); setAdminPin(''); setShowAdminLogin(false); }}>← Back</button>
-      </div>
-
-      <div style={S.adminControls}>
-        <div style={{ ...S.phaseToggle, ...(votingOpen ? S.phaseToggleOpen : S.phaseToggleClosed) }}>
-          <div>
-            <strong>{votingOpen ? '✅ Voting is OPEN' : '🔒 Voting is CLOSED'}</strong>
-            <p style={{ margin:'3px 0 0', fontSize:12, color:'#666' }}>
-              {votingOpen ? 'Residents can now access Phase 2 voting' : 'Only Phase 1 suggestions are accessible to residents'}
-            </p>
+            <input style={S.suggInput}
+              placeholder={`Any specific brands or styles to suggest?`}
+              value={catSuggestion}
+              onChange={e => setSuggestions(prev => ({ ...prev, [cat.id]: e.target.value }))} />
           </div>
-          <button style={{ ...S.toggleBtn, ...(votingOpen ? S.toggleBtnClose : S.toggleBtnOpen) }}
-            onClick={async () => {
-              setLoading(true);
-              await setVotingOpen(!votingOpen);
-              setVotingOpenState(!votingOpen);
-              setLoading(false);
-            }}>
-            {loading ? '...' : votingOpen ? 'Close Voting' : 'Open Voting'}
-          </button>
-        </div>
-      </div>
+        );
+      })}
 
-      <div style={S.tabsOuter}>
-        {CAT_GROUPS.map(group => (
-          <div key={group.label} style={S.tabGroup}>
-            <div style={S.tabGroupLabel}>
-              {group.label === 'Zero Alcohol' && <span style={S.zeroTag}>0%</span>}
-              {group.label}
-            </div>
-            <div style={S.tabsScroll}>
-              {group.cats.map(cat => (
-                <button key={cat}
-                  style={{ ...S.tab, ...(activeCategory===cat ? S.tabActive : {}), ...(isZero(cat) ? S.tabZero : {}), ...(activeCategory===cat && isZero(cat) ? S.tabZeroActive : {}) }}
-                  onClick={() => setActiveCategory(cat)}>
-                  {CAT_EMOJI[cat]} <span style={S.tabLabel}>{CAT_LABELS[cat]}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ ...S.card, ...(isZero(activeCategory) ? S.cardZero : {}) }}>
-        <h3 style={S.cardTitle}>{CAT_EMOJI[activeCategory]} {CAT_LABELS[activeCategory]} — Leaderboard</h3>
-        {(() => {
-          const items = [...(drinksByCategory[activeCategory] || [])];
-          const sorted = items.sort((a, b) => (voteCounts[b.id] || 0) - (voteCounts[a.id] || 0));
-          const max = Math.max(voteCounts[sorted[0]?.id] || 1, 1);
-          return sorted.length === 0
-            ? <p style={{ color:'#aaa', fontStyle:'italic' }}>No entries yet</p>
-            : sorted.map((item, i) => {
-              const count = voteCounts[item.id] || 0;
-              return (
-                <div key={item.id} style={S.resultRow}>
-                  <div style={S.rank}>#{i+1}</div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                      <span style={{ fontWeight:600, color:'#2C1A0E' }}>{item.name}</span>
-                      <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                        {item.is_current_stock && keepCounts[item.id] > 0 && (
-                          <span style={{ fontSize:12, color:'#2d5a2d', background:'#e8f0e8', borderRadius:4, padding:'2px 7px', fontWeight:600 }}>
-                            ✓ Keep: {keepCounts[item.id]}
-                          </span>
-                        )}
-                        <span style={{ fontWeight:700, color:'#8B6914', fontSize:14 }}>{count} vote{count!==1?'s':''}</span>
-                      </div>
-                    </div>
-                    <div style={{ marginTop:3 }}>
-                      <Tag>{item.type}</Tag>
-                      <Tag gold>{item.price_range} · {item.price}</Tag>
-                      {item.is_current_stock && <Tag onmenu>✓ On menu · {item.current_bar_price}</Tag>}
-                      {!item.is_current_stock && item.retail_price && (
-                        <span style={S.priceCompare}>
-                          <span style={S.retailLabel}>Retail {item.retail_price}</span>
-                          <span style={S.arrowLabel}>→</span>
-                          <span style={S.markupLabel}>Bar ~{item.markup_price}</span>
-                        </span>
-                      )}
-                      {!item.is_seed && item.suggested_by && <Tag green>by {item.suggested_by}</Tag>}
-                      {isZero(activeCategory) && <Tag teal>0% alc</Tag>}
-                    </div>
-                    <div style={S.bar}><div style={{ ...S.barFill, width:`${(count/max)*100}%` }} /></div>
-                  </div>
-                </div>
-              );
-            });
-        })()}
+      <div style={S.commentCard}>
+        <label style={S.commentLabel}>💬 Anything else you'd like us to know? (optional)</label>
+        <textarea style={S.commentArea}
+          placeholder="e.g. Would love a happy hour on Fridays, or more low-alcohol options..."
+          value={comment}
+          onChange={e => setComment(e.target.value)} />
       </div>
 
       {error && <div style={S.errorBox}>{error}</div>}
 
-      {/* Full Tally — all categories */}
-      <div style={S.card} id="tally-printable">
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-          <h3 style={{ ...S.cardTitle, margin:0 }}>📊 Full Tally — All Categories</h3>
+      <div style={S.submitArea}>
+        <p style={S.submitHint}>
+          {totalSelections === 0 ? 'Tick at least one option to continue' : `${totalSelections} preference${totalSelections !== 1 ? 's' : ''} selected`}
+        </p>
+        <button style={{ ...S.primaryBtn, ...(totalSelections === 0 ? S.disabled : {}) }}
+          onClick={() => totalSelections > 0 && setScreen('review')}>
+          Review &amp; Submit →
+        </button>
+        <button style={{ ...S.ghostBtn, display:'block', margin:'10px auto 0' }} onClick={() => setScreen('home')}>← Back</button>
+      </div>
+    </div>
+  );
+
+  // ── REVIEW ────────────────────────────────────────────────────
+  if (screen === 'review') return (
+    <div style={S.root}>
+      <div style={S.topBar}>
+        <div>
+          <h1 style={S.topTitle}>Review your responses</h1>
+          <p style={S.topSub}>Check everything looks right before submitting</p>
+        </div>
+      </div>
+
+      {CATEGORIES.map(cat => {
+        const catSels = selections[cat.id] || [];
+        const catSugg = suggestions[cat.id];
+        if (!catSels.length && !catSugg) return null;
+        return (
+          <div key={cat.id} style={S.reviewCat}>
+            <div style={S.reviewCatHead}>{cat.emoji} {cat.label}</div>
+            {catSels.length > 0 && (
+              <div style={S.reviewTags}>
+                {catSels.map(s => <span key={s} style={S.reviewTag}>{s}</span>)}
+              </div>
+            )}
+            {catSugg && <p style={S.reviewSugg}>💡 {catSugg}</p>}
+          </div>
+        );
+      })}
+
+      {comment && (
+        <div style={S.reviewComment}><strong>💬</strong> {comment}</div>
+      )}
+
+      {error && <div style={S.errorBox}>{error}</div>}
+
+      <div style={S.submitArea}>
+        <button style={{ ...S.primaryBtn, ...(loading ? S.disabled : {}) }} onClick={handleSubmit}>
+          {loading ? 'Saving...' : '✓ Submit my responses'}
+        </button>
+        <button style={{ ...S.ghostBtn, display:'block', margin:'10px auto 0' }} onClick={() => setScreen('survey')}>← Go back and edit</button>
+      </div>
+    </div>
+  );
+
+  // ── SUCCESS ───────────────────────────────────────────────────
+  if (screen === 'success') return (
+    <div style={S.root}>
+      <div style={S.successCard}>
+        <div style={{ fontSize:64 }}>🎉</div>
+        <h2 style={{ fontFamily:"'Georgia',serif", fontSize:28, color:'#2C1A0E', margin:'12px 0 8px' }}>Thanks!</h2>
+        <p style={{ color:'#666', marginBottom:8, fontFamily:'sans-serif' }}>Your preferences have been saved.</p>
+        {responseCount > 0 && (
+          <p style={{ color:'#D4A96A', fontSize:14, fontFamily:'sans-serif' }}>
+            {responseCount} resident{responseCount !== 1 ? 's' : ''} have now responded.
+          </p>
+        )}
+        <button style={{ ...S.primaryBtn, marginTop:20 }}
+          onClick={() => { setSelections(EMPTY_SELECTIONS()); setSuggestions(EMPTY_SUGGESTIONS()); setComment(''); setScreen('home'); }}>
+          ← Back to start
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── ADMIN ─────────────────────────────────────────────────────
+  if (screen === 'admin') {
+    const tally = {};
+    CATEGORIES.forEach(cat => {
+      tally[cat.id] = {};
+      cat.options.forEach(opt => { tally[cat.id][opt] = 0; });
+    });
+    (adminData || []).forEach(r => {
+      if (!r.selections) return;
+      CATEGORIES.forEach(cat => {
+        (r.selections[cat.id] || []).forEach(opt => {
+          if (tally[cat.id][opt] !== undefined) tally[cat.id][opt]++;
+        });
+      });
+    });
+
+    const totalResponses = adminData?.length || 0;
+    const allSuggestions = [];
+    const allComments = [];
+    (adminData || []).forEach(r => {
+      if (r.comment) allComments.push({ text: r.comment, date: r.created_at });
+      CATEGORIES.forEach(cat => {
+        const s = r.suggestions?.[cat.id];
+        if (s) allSuggestions.push({ cat: cat.label, text: s });
+      });
+    });
+
+    function downloadCSV() {
+      const rows = [['Category', 'Option', 'Votes', 'Percentage']];
+      CATEGORIES.forEach(cat => {
+        cat.options.forEach(opt => {
+          const votes = tally[cat.id][opt] || 0;
+          const pct = totalResponses > 0 ? Math.round((votes / totalResponses) * 100) : 0;
+          rows.push([cat.label, opt, votes, `${pct}%`]);
+        });
+      });
+      const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+      const a = document.createElement('a');
+      a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+      a.download = 'paynter-bar-survey-results.csv';
+      a.click();
+    }
+
+    return (
+      <div style={S.root}>
+        <div style={S.topBar}>
+          <div>
+            <h1 style={S.topTitle}>Admin — Results</h1>
+            <p style={S.topSub}>{totalResponses} response{totalResponses !== 1 ? 's' : ''} received</p>
+          </div>
           <div style={{ display:'flex', gap:8 }}>
-            <button style={{ ...S.ghostBtn, fontSize:12 }} onClick={() => window.print()}>🖨 Print</button>
-            <button style={{ ...S.ghostBtn, fontSize:12 }} onClick={downloadTallyCSV}>⬇ Download CSV</button>
+            <button style={S.smallBtn} onClick={downloadCSV}>⬇ CSV</button>
+            <button style={{ ...S.smallBtn, background: surveyOpen ? '#cc3333' : '#2d7a2d', color:'#fff', border:'none' }}
+              onClick={async () => { const next = !surveyOpen; await setSurveyOpen(next); setSurveyOpenState(next); }}>
+              {surveyOpen ? '🔒 Close' : '✅ Open'}
+            </button>
           </div>
         </div>
+
         {CATEGORIES.map(cat => {
-          const items = [...(drinksByCategory[cat] || [])];
-          const sorted = items.sort((a, b) => (voteCounts[b.id] || 0) - (voteCounts[a.id] || 0));
-          if (!sorted.length) return null;
+          const catTally = tally[cat.id];
+          const max = Math.max(...Object.values(catTally), 1);
+          const sorted = [...cat.options].sort((a, b) => (catTally[b] || 0) - (catTally[a] || 0));
           return (
-            <div key={cat} style={S.tallySection}>
-              <div style={S.tallyCatHead}>{CAT_EMOJI[cat]} {CAT_LABELS[cat]}</div>
-              <div style={S.tallyTable}>
-                <div style={S.tallyHeaderRow}>
-                  <span style={{ flex:1 }}>Item</span>
-                  <span style={S.tallyCol}>Status</span>
-                  <span style={S.tallyCol}>Keeps</span>
-                  <span style={S.tallyCol}>Votes</span>
-                </div>
-                {sorted.map(item => {
-                  const votes = voteCounts[item.id] || 0;
-                  const keeps = keepCounts[item.id] || 0;
-                  return (
-                    <div key={item.id} style={{ ...S.tallyRow, ...(votes > 0 ? S.tallyRowActive : {}) }}>
-                      <span style={{ flex:1, fontSize:13, color:'#2C1A0E' }}>
-                        {item.name}
-                        {!item.is_seed && item.suggested_by && <span style={{ color:'#aaa', fontSize:11, marginLeft:6 }}>({item.suggested_by})</span>}
-                      </span>
-                      <span style={S.tallyCol}>
-                        {item.is_current_stock
-                          ? <span style={{ color:'#2d5a2d', fontSize:11, fontWeight:600 }}>On menu</span>
-                          : <span style={{ color:'#888', fontSize:11 }}>Suggestion</span>}
-                      </span>
-                      <span style={{ ...S.tallyCol, color: keeps > 0 ? '#2d5a2d' : '#ccc', fontWeight: keeps > 0 ? 700 : 400 }}>
-                        {keeps > 0 ? keeps : '—'}
-                      </span>
-                      <span style={{ ...S.tallyCol, color: votes > 0 ? '#8B6914' : '#ccc', fontWeight: votes > 0 ? 700 : 400 }}>
-                        {votes > 0 ? votes : '—'}
-                      </span>
+            <div key={cat.id} style={S.adminCatCard}>
+              <div style={S.adminCatHead}>{cat.emoji} {cat.label}</div>
+              {sorted.map(opt => {
+                const count = catTally[opt] || 0;
+                const pct = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
+                return (
+                  <div key={opt} style={S.adminRow}>
+                    <div style={S.adminRowLabel}>{opt}</div>
+                    <div style={S.adminBar}>
+                      <div style={{ ...S.adminBarFill, width: `${Math.round((count / max) * 100)}%` }} />
                     </div>
-                  );
-                })}
-              </div>
+                    <div style={S.adminCount}>{count} <span style={{ color:'#aaa', fontSize:11 }}>({pct}%)</span></div>
+                  </div>
+                );
+              })}
             </div>
           );
         })}
-      </div>
 
-      <div style={{ textAlign:'center', padding:'16px 16px 0', display:'flex', gap:12, justifyContent:'center', flexWrap:'wrap' }}>
-        <button style={{ ...S.ghostBtn, color:'#cc3333' }} onClick={() => handleAdminReset('votes')}>
-          {loading ? '...' : '🗑 Reset all votes'}
-        </button>
-        <button style={{ ...S.ghostBtn, color:'#cc3333' }} onClick={() => handleAdminReset('suggestions')}>
-          {loading ? '...' : '🗑 Remove user suggestions'}
-        </button>
-      </div>
-
-      <AdminComments />
-    </div>
-  );
-}
-
-// ── Tag helper ────────────────────────────────────────────────
-
-function AdminComments() {
-  const [comments, setComments] = useState([]);
-  useEffect(() => {
-    if (!supabase) return;
-    supabase.from('submissions').select('resident_name, comment, created_at')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => setComments((data || []).filter(r => r.comment)));
-  }, []);
-  if (comments.length === 0) return null;
-  return (
-    <div style={{ margin:'16px 14px', background:'#fff', borderRadius:12, border:'1px solid #F0E0C8', padding:'16px' }}>
-      <h3 style={{ fontFamily:"'Georgia',serif", fontSize:16, color:'#2C1A0E', margin:'0 0 12px' }}>
-        💬 Resident Comments ({comments.length})
-      </h3>
-      {comments.map((r, i) => (
-        <div key={i} style={{ padding:'10px 0', borderBottom: i < comments.length-1 ? '1px solid #F5ECD8' : 'none' }}>
-          <div style={{ fontSize:12, color:'#aaa', marginBottom:3 }}>
-            {r.resident_name} · {new Date(r.created_at).toLocaleDateString('en-AU')}
+        {allSuggestions.length > 0 && (
+          <div style={S.adminCatCard}>
+            <div style={S.adminCatHead}>💡 Suggestions ({allSuggestions.length})</div>
+            {allSuggestions.map((s, i) => (
+              <div key={i} style={S.adminCommentRow}>
+                <span style={S.adminCommentCat}>{s.cat}</span>
+                <span style={{ color:'#333', fontSize:14, fontFamily:'sans-serif' }}>{s.text}</span>
+              </div>
+            ))}
           </div>
-          <div style={{ fontSize:14, color:'#333' }}>{r.comment}</div>
+        )}
+
+        {allComments.length > 0 && (
+          <div style={S.adminCatCard}>
+            <div style={S.adminCatHead}>💬 Comments ({allComments.length})</div>
+            {allComments.map((c, i) => (
+              <div key={i} style={{ ...S.adminCommentRow, flexDirection:'column', gap:2 }}>
+                <span style={{ fontSize:11, color:'#aaa', fontFamily:'sans-serif' }}>{new Date(c.date).toLocaleDateString('en-AU')}</span>
+                <span style={{ color:'#333', fontSize:14, fontFamily:'sans-serif' }}>{c.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ textAlign:'center', padding:'16px', display:'flex', gap:12, justifyContent:'center' }}>
+          <button style={{ ...S.ghostBtn, color:'#cc3333' }}
+            onClick={async () => {
+              if (!confirm('Delete ALL responses? This cannot be undone.')) return;
+              await supabase.from('responses').delete().gte('created_at', '2000-01-01');
+              setAdminData([]);
+            }}>
+            🗑 Reset all responses
+          </button>
+          <button style={S.ghostBtn} onClick={() => setScreen('home')}>← Home</button>
         </div>
-      ))}
-    </div>
-  );
-}
+      </div>
+    );
+  }
 
-// ── Reference Panel ───────────────────────────────────────────
-
-function ReferencePanel({ drinks, category }) {
-  const [open, setOpen] = useState(false);
-  const current = drinks.filter(d => d.is_current_stock);
-  const comparison = drinks.filter(d => !d.is_current_stock && d.retail_price);
-
-  return (
-    <div style={RP.wrap}>
-      <button style={RP.toggle} onClick={() => setOpen(v => !v)}>
-        <span>📋 View current stock &amp; price guide for {CAT_LABELS[category]}</span>
-        <span style={{ fontSize:12 }}>{open ? '▲ Hide' : '▼ Show'}</span>
-      </button>
-      {open && (
-        <div style={RP.panel}>
-          {current.length > 0 && (
-            <>
-              <div style={RP.sectionHead}>✓ Currently stocked</div>
-              {current.map(d => (
-                <div key={d.id} style={RP.row}>
-                  <span style={RP.name}>{d.name}</span>
-                  <span style={RP.price}>{d.current_bar_price}</span>
-                </div>
-              ))}
-            </>
-          )}
-          {comparison.length > 0 && (
-            <>
-              <div style={{ ...RP.sectionHead, marginTop: current.length ? 10 : 0 }}>💡 Could be stocked — estimated bar price</div>
-              {comparison.map(d => (
-                <div key={d.id} style={RP.row}>
-                  <span style={RP.name}>{d.name}</span>
-                  <span style={RP.comparePrice}>
-                    <span style={{ color:'#1a5a8a', fontWeight:600 }}>~{d.markup_price} est.</span>
-                  </span>
-                </div>
-              ))}
-            </>
-          )}
-          {current.length === 0 && comparison.length === 0 && (
-            <p style={{ color:'#aaa', fontSize:12, margin:0 }}>No reference data for this category yet.</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const RP = {
-  wrap: { margin:'10px 14px 0' },
-  toggle: { width:'100%', display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', background:'#f5f0e8', border:'1px solid #E8D5B7', borderRadius:8, cursor:'pointer', fontSize:13, fontFamily:"'Georgia',serif", color:'#6B3A2A', textAlign:'left' },
-  panel: { background:'#fff', border:'1px solid #E8D5B7', borderTop:'none', borderRadius:'0 0 8px 8px', padding:'12px 14px' },
-  sectionHead: { fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8, color:'#8B6914', marginBottom:6 },
-  row: { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 0', borderBottom:'1px solid #f5ede0', fontSize:13 },
-  name: { color:'#2C1A0E', flex:1 },
-  price: { color:'#2d5a2d', fontWeight:600, fontSize:12, background:'#e8f0e8', borderRadius:4, padding:'2px 7px', marginLeft:8 },
-  comparePrice: { display:'flex', alignItems:'center', fontSize:12, marginLeft:8 },
-};
-
-function Tag({ children, gold, green, teal, onmenu, est }) {
-  const bg = onmenu ? '#e8f0e8' : est ? '#fef9e7' : gold ? '#f5e6c8' : green ? '#e8f4e8' : teal ? '#e0f4f4' : '#F0E0C8';
-  const color = onmenu ? '#2d5a2d' : est ? '#7d6608' : gold ? '#8B4513' : green ? '#2d6a2d' : teal ? '#1a6b6b' : '#6B3A2A';
-  const fw = onmenu ? 600 : 400;
-  return <span style={{
-    display:'inline-block', background: bg, color, fontWeight: fw,
-    borderRadius:4, padding:'2px 6px', fontSize:11, marginLeft:6,
-  }}>{children}</span>;
+  return null;
 }
 
 // ── Styles ────────────────────────────────────────────────────
-
 const S = {
-  root: { minHeight:'100vh', background:'linear-gradient(160deg,#FFF8F0 0%,#F5E6D0 100%)', fontFamily:"'Georgia','Times New Roman',serif", paddingBottom:60, maxWidth:960, margin:'0 auto' },
-  demoBar: { background:'#fff3cd', color:'#856404', padding:'10px 16px', fontSize:13, textAlign:'center', borderBottom:'1px solid #ffd666' },
-  hero: { background:'linear-gradient(135deg,#2C1A0E 0%,#6B3A2A 60%,#8B4513 100%)', padding:'44px 24px 36px', textAlign:'center', color:'#fff' },
-  heroTitle: { fontFamily:"'Georgia',serif", fontSize:30, fontWeight:400, margin:'0 0 6px', color:'#F5C842', letterSpacing:1 },
-  heroSub: { fontSize:12, color:'#D4A96A', margin:'0 0 10px', letterSpacing:2, textTransform:'uppercase' },
-  heroDesc: { fontSize:14, color:'#E8D5B7', maxWidth:420, margin:'0 auto 16px' },
-  participationBadge: { display:'inline-block', background:'rgba(255,255,255,0.15)', color:'#F5E6C8', border:'1px solid rgba(245,200,66,0.4)', borderRadius:20, padding:'6px 16px', fontSize:13, margin:'0 auto' },
-  pillSection: { marginTop:14 },
-  catPillRow: { display:'flex', flexWrap:'wrap', gap:6, justifyContent:'center' },
-  catPill: { background:'rgba(255,255,255,0.12)', color:'#F5E6C8', borderRadius:20, padding:'4px 10px', fontSize:12, border:'1px solid rgba(255,255,255,0.2)' },
-  catPillZero: { background:'rgba(100,200,200,0.15)', color:'#a0e4e4', border:'1px solid rgba(100,200,200,0.3)' },
-  zeroPillLabel: { color:'#a0e4e4', fontSize:11, alignSelf:'center', fontStyle:'italic' },
-  topBar: { background:'linear-gradient(135deg,#2C1A0E 0%,#6B3A2A 100%)', padding:'18px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' },
-  topTitle: { fontFamily:"'Georgia',serif", fontSize:20, color:'#F5C842', margin:0, fontWeight:400 },
-  topSub: { fontSize:11, color:'#D4A96A', margin:'3px 0 0', textTransform:'uppercase', letterSpacing:1.5 },
-  nameBadge: { background:'rgba(255,255,255,0.1)', color:'#F5C842', padding:'5px 12px', borderRadius:20, fontSize:12, border:'1px solid rgba(245,200,66,0.3)', whiteSpace:'nowrap' },
-  card: { background:'#fff', borderRadius:12, padding:'18px', margin:'14px 14px 0', boxShadow:'0 2px 12px rgba(44,26,14,0.07)', border:'1px solid #F0E0C8' },
-  cardZero: { border:'1px solid #b2e0e0', boxShadow:'0 2px 12px rgba(0,120,120,0.06)' },
-  cardTitle: { fontFamily:"'Georgia',serif", fontSize:17, color:'#2C1A0E', margin:'0 0 14px', fontWeight:400 },
-  tabsOuter: { padding:'14px 14px 0' },
-  tabGroup: { marginBottom:8 },
-  tabGroupLabel: { fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:1.2, color:'#aaa', marginBottom:5, display:'flex', alignItems:'center', gap:5 },
-  zeroTag: { background:'#1a8a8a', color:'#fff', borderRadius:4, padding:'1px 5px', fontSize:10, fontWeight:700 },
-  tabsScroll: { display:'flex', gap:6, overflowX:'auto', WebkitOverflowScrolling:'touch', paddingBottom:2 },
-  tab: { padding:'7px 11px', borderRadius:8, border:'2px solid #E8D5B7', background:'#fff', cursor:'pointer', fontSize:12, fontFamily:"'Georgia',serif", color:'#8B6914', display:'flex', alignItems:'center', gap:4, position:'relative', whiteSpace:'nowrap', flexShrink:0, transition:'all 0.15s' },
-  tabActive: { background:'#2C1A0E', border:'2px solid #2C1A0E', color:'#F5C842' },
-  tabZero: { border:'2px solid #b2e0e0', color:'#1a8a8a' },
-  tabZeroActive: { background:'#0d5f5f', border:'2px solid #0d5f5f', color:'#a0ffe0' },
-  tabLabel: { fontWeight:500 },
-  badge: { position:'absolute', top:-6, right:-6, background:'#F5C842', color:'#2C1A0E', borderRadius:'50%', width:17, height:17, fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700 },
-  priceRow: { display:'flex', gap:6, padding:'10px 14px 0', flexWrap:'wrap' },
-  priceChip: { flex:1, minWidth:80, padding:'6px 8px', borderRadius:6, color:'#fff', fontSize:11, textAlign:'center', lineHeight:1.5 },
-  zeroNotice: { width:'100%', background:'#e0f8f8', color:'#0d6060', borderRadius:6, padding:'7px 12px', fontSize:12, fontStyle:'italic', marginBottom:4 },
-  label: { fontSize:11, color:'#8B6914', fontWeight:600, textTransform:'uppercase', letterSpacing:0.8, display:'block', marginBottom:4 },
-  input: { padding:'10px 12px', borderRadius:8, border:'2px solid #E8D5B7', fontSize:14, fontFamily:"'Georgia',serif", color:'#2C1A0E', background:'#FFFAF5', outline:'none', width:'100%', boxSizing:'border-box' },
-  formGrid: { display:'flex', flexDirection:'column', gap:12, marginBottom:4 },
-  primaryBtn: { background:'linear-gradient(135deg,#8B4513,#6B3A2A)', color:'#fff', border:'none', borderRadius:8, padding:'12px 24px', fontSize:14, fontFamily:"'Georgia',serif", cursor:'pointer', width:'100%', marginTop:12, letterSpacing:0.4 },
-  addBtn: { background:'#f5e6c8', color:'#6B3A2A', border:'1px solid #D4A96A', borderRadius:8, padding:'10px 20px', fontSize:14, fontFamily:"'Georgia',serif", cursor:'pointer', width:'100%', marginTop:12 },
-  ghostBtn: { background:'none', border:'none', color:'#8B6914', cursor:'pointer', fontSize:13, textDecoration:'underline', fontFamily:"'Georgia',serif" },
-  disabled: { opacity:0.4, cursor:'not-allowed' },
-  suggRow: { display:'flex', justifyContent:'space-between', alignItems:'flex-start', padding:'10px 0', borderBottom:'1px solid #F0E0C8' },
-  removeBtn: { background:'none', border:'none', color:'#cc3333', cursor:'pointer', fontSize:16, padding:'2px 6px', marginLeft:8 },
-  voteRow: { display:'flex', alignItems:'flex-start', gap:12, padding:'10px', borderRadius:8, marginBottom:6, cursor:'pointer', border:'2px solid transparent', background:'#FFFAF5', transition:'all 0.12s' },
-  voteRowOn: { background:'#FFF3D6', border:'2px solid #F5C842' },
-  checkbox: { width:22, height:22, borderRadius:6, border:'2px solid #D4A96A', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, color:'#fff', fontWeight:700, fontSize:13, marginTop:2 },
-  checkOn: { background:'#8B6914', border:'2px solid #8B6914' },
-  submitArea: { textAlign:'center', padding:'22px 16px 0' },
-  errorBox: { background:'#fff0f0', color:'#cc3333', border:'1px solid #ffcccc', borderRadius:8, padding:'10px 14px', margin:'12px 14px 0', fontSize:13 },
-  resultRow: { display:'flex', alignItems:'flex-start', gap:10, padding:'10px 0', borderBottom:'1px solid #F0E0C8' },
-  rank: { width:26, color:'#bbb', fontWeight:700, fontSize:12, paddingTop:2 },
-  bar: { height:6, background:'#F0E0C8', borderRadius:3, marginTop:7, overflow:'hidden' },
-  barFill: { height:'100%', background:'linear-gradient(90deg,#8B6914,#F5C842)', borderRadius:3, transition:'width 0.4s' },
-  phaseBtns: { display:'flex', gap:12, marginTop:18 },
-  phaseBtn: { flex:1, padding:'14px 8px', borderRadius:10, border:'2px solid #D4A96A', background:'#FFFAF5', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:4, fontFamily:"'Georgia',serif", color:'#2C1A0E', fontSize:13 },
-  adminBox: { background:'#F5F5F5', borderRadius:8, padding:16, marginTop:14, border:'1px solid #DDD' },
-  successCard: { margin:'50px 20px', background:'#fff', borderRadius:16, padding:'36px 24px', textAlign:'center', boxShadow:'0 4px 24px rgba(44,26,14,0.1)', border:'1px solid #F0E0C8' },
-  priceCompare: { display:'inline-flex', alignItems:'center', gap:3, marginLeft:6, background:'#f0f7ff', borderRadius:4, padding:'2px 7px', fontSize:11 },
-  retailLabel: { color:'#666' },
-  arrowLabel: { color:'#aaa', fontSize:10 },
-  markupLabel: { color:'#1a5a8a', fontWeight:600 },
-  adminControls: { padding:'14px 14px 0' },
-  phaseToggle: { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 16px', borderRadius:10, border:'2px solid', gap:12 },
-  phaseToggleOpen: { background:'#e8f4e8', borderColor:'#4CAF50' },
-  phaseToggleClosed: { background:'#fff3e0', borderColor:'#FF9800' },
-  toggleBtn: { padding:'8px 18px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:"'Georgia',serif", fontSize:13, fontWeight:600, whiteSpace:'nowrap' },
-  toggleBtnOpen: { background:'#4CAF50', color:'#fff' },
-  toggleBtnClose: { background:'#FF5722', color:'#fff' },
-  phaseBtnLocked: { background:'#f5f5f5', borderColor:'#ddd' },
-  sectionHead: { fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8, color:'#8B6914', marginBottom:8, marginTop:4 },
-  currentRow: { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid #F0E0C8', gap:10 },
-  replaceBtn: { background:'#fff3e0', color:'#8B4513', border:'1px solid #D4A96A', borderRadius:6, padding:'5px 10px', fontSize:11, fontFamily:"'Georgia',serif", cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 },
-  addNewBtn: { width:'100%', marginTop:14, padding:'10px', background:'#f5f0e8', border:'2px dashed #D4A96A', borderRadius:8, color:'#8B6914', fontSize:13, fontFamily:"'Georgia',serif", cursor:'pointer' },
-  inlineForm: { background:'#FFFAF5', border:'1px solid #D4A96A', borderRadius:8, padding:'14px', marginTop:14 },
-  inlineFormTitle: { fontSize:13, fontWeight:600, color:'#2C1A0E', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' },
-  closeFormBtn: { background:'none', border:'none', color:'#aaa', cursor:'pointer', fontSize:16, padding:'0 4px' },
-  keepLabel: { display:'flex', alignItems:'center', fontSize:12, cursor:'pointer', marginLeft:8, whiteSpace:'nowrap', userSelect:'none' },
-  catGroupBanner: { background:'#2C1A0E', color:'#F5E6C8', padding:'8px 16px', fontSize:13, fontWeight:700, letterSpacing:1, textTransform:'uppercase', display:'flex', alignItems:'center' },
-  catCardHead: { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, paddingBottom:8, borderBottom:'1px solid #F0E0C8' },
-  currentRowKept: { background:'#f0f9f0', borderRadius:4 },
-  wineGroupHead: { fontSize:11, fontWeight:700, color:'#aaa', textTransform:'uppercase', letterSpacing:1, padding:'8px 0 4px', borderBottom:'1px solid #f0e0c8', marginBottom:4 },
-  reviewSection: { borderRadius:8, overflow:'hidden', border:'1px solid #F0E0C8' },
-  reviewSectionHead: { background:'#F5ECD8', padding:'8px 12px', fontSize:12, fontWeight:700, color:'#6B3A2A' },
-  reviewRow: { display:'flex', alignItems:'center', gap:8, padding:'8px 12px', borderBottom:'1px solid #faf0e0', flexWrap:'wrap' },
-  reviewCat: { fontSize:11, color:'#aaa', minWidth:100 },
-  reviewName: { flex:1, fontSize:13, fontWeight:600, color:'#2C1A0E' },
-  reviewBadge: { fontSize:11, borderRadius:4, padding:'2px 7px', whiteSpace:'nowrap' },
-  reviewDeleteBtn: { background:'none', border:'none', color:'#cc3333', cursor:'pointer', fontSize:15, padding:'0 4px', marginLeft:4, flexShrink:0 },
-  tallySection: { marginBottom:16 },
-  tallyCatHead: { background:'#F5ECD8', padding:'6px 10px', fontFamily:"'Georgia',serif", fontSize:13, fontWeight:700, color:'#6B3A2A', borderRadius:'6px 6px 0 0', borderBottom:'2px solid #E8D5B7' },
-  tallyTable: { border:'1px solid #F0E0C8', borderTop:'none', borderRadius:'0 0 6px 6px', overflow:'hidden' },
-  tallyHeaderRow: { display:'flex', padding:'6px 10px', background:'#faf5ee', fontSize:11, fontWeight:700, color:'#aaa', textTransform:'uppercase', letterSpacing:0.5, borderBottom:'1px solid #F0E0C8' },
-  tallyRow: { display:'flex', alignItems:'center', padding:'7px 10px', borderBottom:'1px solid #faf0e0' },
-  tallyRowActive: { background:'#fffdf8' },
-  tallyCol: { width:80, textAlign:'center', fontSize:13, flexShrink:0 },
-  instrText: { fontSize:13, color:'#666', margin:'0 0 12px', lineHeight:1.6 },
-  instrRow: { display:'flex', flexDirection:'column', gap:12 },
-  instrPhase: { display:'flex', gap:12, alignItems:'flex-start' },
-  instrIcon: { fontSize:22, flexShrink:0, marginTop:2 },
-  instrLabel: { fontSize:13, color:'#2C1A0E', display:'block', marginBottom:4 },
-  instrStatus: { background:'#e8f4e8', color:'#2d6a2d', borderRadius:4, padding:'1px 7px', fontSize:11, fontWeight:400, marginLeft:6 },
-  instrStatusSoon: { background:'#fff3e0', color:'#e65100' },
-  instrDesc: { fontSize:12, color:'#888', margin:'0', lineHeight:1.6 },
+  root: { minHeight:'100vh', background:'#FAF6F0', fontFamily:"'Georgia', serif", maxWidth:600, margin:'0 auto', paddingBottom:40 },
+  hero: { background:'linear-gradient(160deg, #2C1A0E 0%, #4a2c14 100%)', color:'#F5E6C8', padding:'40px 24px 32px', textAlign:'center' },
+  heroIcon: { fontSize:52, marginBottom:8 },
+  heroTitle: { fontSize:32, fontWeight:400, margin:'0 0 4px', letterSpacing:1.5, color:'#F5C842' },
+  heroSub: { fontSize:12, textTransform:'uppercase', letterSpacing:3, color:'#D4A96A', margin:'0 0 12px' },
+  heroDesc: { fontSize:14, color:'#E8D5B7', maxWidth:380, margin:'0 auto 16px', lineHeight:1.6, fontFamily:'sans-serif' },
+  countBadge: { display:'inline-block', background:'rgba(255,255,255,0.12)', border:'1px solid rgba(212,169,106,0.5)', borderRadius:20, padding:'6px 16px', fontSize:13, color:'#F5E6C8', fontFamily:'sans-serif' },
+  card: { background:'#fff', margin:'14px 14px 0', borderRadius:12, padding:'20px', border:'1px solid #F0E0C8', boxShadow:'0 2px 8px rgba(44,26,14,0.06)' },
+  cardTitle: { fontFamily:"'Georgia',serif", fontSize:17, color:'#2C1A0E', margin:'0 0 10px' },
+  instrText: { fontSize:14, color:'#555', lineHeight:1.6, margin:'0 0 14px', fontFamily:'sans-serif' },
+  catPreview: { display:'flex', flexWrap:'wrap', gap:6 },
+  catChip: { fontSize:12, fontFamily:'sans-serif', background:'#FAF6F0', border:'1px solid #E8D5B7', borderRadius:12, padding:'4px 10px', color:'#555' },
+  startBtn: { width:'100%', padding:'16px', background:'#2C1A0E', color:'#F5C842', border:'none', borderRadius:10, fontSize:17, fontFamily:"'Georgia',serif", cursor:'pointer', letterSpacing:0.5 },
+  topBar: { background:'#2C1A0E', color:'#F5E6C8', padding:'16px 16px 14px', display:'flex', justifyContent:'space-between', alignItems:'center' },
+  topTitle: { fontSize:18, fontWeight:400, margin:0, color:'#F5C842', fontFamily:"'Georgia',serif", letterSpacing:0.5 },
+  topSub: { fontSize:11, color:'#D4A96A', margin:'2px 0 0', letterSpacing:1, fontFamily:'sans-serif' },
+  progressBadge: { background:'rgba(245,200,66,0.2)', border:'1px solid rgba(245,200,66,0.4)', borderRadius:12, padding:'4px 12px', fontSize:13, color:'#F5C842', whiteSpace:'nowrap', fontFamily:'sans-serif' },
+  catCard: { background:'#fff', margin:'10px 14px 0', borderRadius:12, padding:'16px', border:'1px solid #F0E0C8', boxShadow:'0 1px 4px rgba(44,26,14,0.04)', transition:'border-color 0.2s, box-shadow 0.2s' },
+  catCardActive: { borderColor:'#D4A96A', boxShadow:'0 2px 10px rgba(212,169,106,0.15)' },
+  catHeader: { display:'flex', alignItems:'center', gap:8, marginBottom:12 },
+  catEmoji: { fontSize:22 },
+  catLabel: { fontFamily:"'Georgia',serif", fontSize:16, fontWeight:700, color:'#2C1A0E', flex:1 },
+  catBadge: { background:'#F5C842', color:'#2C1A0E', fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:10, fontFamily:'sans-serif' },
+  optionsGrid: { display:'flex', flexWrap:'wrap', gap:8, marginBottom:12 },
+  optionLabel: { display:'flex', alignItems:'center', gap:6, padding:'7px 12px', borderRadius:20, border:'1.5px solid #E8D5B7', cursor:'pointer', background:'#FAF6F0', transition:'all 0.15s', userSelect:'none' },
+  optionLabelChecked: { background:'#2C1A0E', borderColor:'#2C1A0E' },
+  optionCheck: { width:16, height:16, borderRadius:'50%', border:'1.5px solid #ccc', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, flexShrink:0, color:'transparent', fontFamily:'sans-serif' },
+  optionCheckChecked: { background:'#F5C842', border:'1.5px solid #F5C842', color:'#2C1A0E', fontWeight:700 },
+  optionText: { fontSize:13, color:'#2C1A0E', fontFamily:'sans-serif' },
+  suggInput: { width:'100%', padding:'8px 12px', border:'1px solid #E8D5B7', borderRadius:8, fontSize:13, fontFamily:'sans-serif', color:'#444', background:'#FAF6F0', outline:'none', boxSizing:'border-box' },
+  commentCard: { background:'#fff', margin:'10px 14px 0', borderRadius:12, padding:'20px', border:'1px solid #F0E0C8' },
+  commentLabel: { display:'block', fontSize:14, color:'#2C1A0E', marginBottom:8, fontFamily:"'Georgia',serif" },
+  commentArea: { width:'100%', minHeight:80, padding:'10px 12px', border:'1px solid #E8D5B7', borderRadius:8, fontSize:13, fontFamily:'sans-serif', color:'#444', resize:'vertical', boxSizing:'border-box', outline:'none' },
+  submitArea: { padding:'20px 14px 0', textAlign:'center' },
+  submitHint: { color:'#aaa', fontSize:13, margin:'0 0 10px', fontFamily:'sans-serif' },
+  primaryBtn: { display:'block', width:'100%', padding:'14px', background:'#2C1A0E', color:'#F5C842', border:'none', borderRadius:10, fontSize:15, fontFamily:"'Georgia',serif", cursor:'pointer', textAlign:'center' },
+  ghostBtn: { background:'none', border:'1px solid #ddd', borderRadius:8, padding:'8px 16px', color:'#888', cursor:'pointer', fontSize:13, fontFamily:'sans-serif' },
+  smallBtn: { padding:'7px 14px', border:'1px solid #ddd', borderRadius:8, background:'#fff', fontSize:12, cursor:'pointer', fontFamily:'sans-serif', color:'#555' },
+  disabled: { opacity:0.4, pointerEvents:'none' },
+  input: { width:'100%', padding:'10px 12px', border:'1px solid #E8D5B7', borderRadius:8, fontSize:14, fontFamily:'sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10 },
+  adminBox: { marginTop:14, display:'flex', gap:8, alignItems:'center' },
+  errorBox: { margin:'10px 14px', background:'#fff0f0', border:'1px solid #ffcccc', borderRadius:8, padding:'10px 14px', color:'#cc3333', fontSize:13, fontFamily:'sans-serif' },
+  reviewCat: { background:'#fff', margin:'8px 14px 0', borderRadius:10, padding:'14px 16px', border:'1px solid #F0E0C8' },
+  reviewCatHead: { fontSize:14, fontWeight:700, color:'#2C1A0E', marginBottom:8, fontFamily:"'Georgia',serif" },
+  reviewTags: { display:'flex', flexWrap:'wrap', gap:6 },
+  reviewTag: { background:'#2C1A0E', color:'#F5C842', fontSize:12, padding:'4px 10px', borderRadius:12, fontFamily:'sans-serif' },
+  reviewSugg: { fontSize:13, color:'#888', margin:'6px 0 0', fontStyle:'italic', fontFamily:'sans-serif' },
+  reviewComment: { background:'#fff', margin:'8px 14px 0', borderRadius:10, padding:'14px 16px', border:'1px solid #F0E0C8', fontSize:13, color:'#555', fontFamily:'sans-serif' },
+  successCard: { margin:'50px 20px', background:'#fff', borderRadius:16, padding:'40px 24px', textAlign:'center', boxShadow:'0 4px 24px rgba(44,26,14,0.1)', border:'1px solid #F0E0C8' },
+  adminCatCard: { background:'#fff', margin:'10px 14px 0', borderRadius:12, padding:'16px', border:'1px solid #F0E0C8' },
+  adminCatHead: { fontFamily:"'Georgia',serif", fontSize:15, color:'#2C1A0E', fontWeight:700, marginBottom:12, paddingBottom:8, borderBottom:'1px solid #F0E0C8' },
+  adminRow: { display:'flex', alignItems:'center', gap:10, marginBottom:8 },
+  adminRowLabel: { width:165, fontSize:13, color:'#444', fontFamily:'sans-serif', flexShrink:0 },
+  adminBar: { flex:1, height:10, background:'#F0E0C8', borderRadius:5, overflow:'hidden' },
+  adminBarFill: { height:'100%', background:'linear-gradient(90deg, #D4A96A, #F5C842)', borderRadius:5, transition:'width 0.4s ease' },
+  adminCount: { width:65, textAlign:'right', fontSize:14, fontWeight:700, color:'#2C1A0E', fontFamily:'sans-serif', flexShrink:0 },
+  adminCommentRow: { display:'flex', gap:10, alignItems:'flex-start', padding:'8px 0', borderBottom:'1px solid #FAF6F0', fontFamily:'sans-serif' },
+  adminCommentCat: { fontSize:11, fontWeight:700, color:'#D4A96A', textTransform:'uppercase', letterSpacing:0.5, flexShrink:0, width:130 },
 };
