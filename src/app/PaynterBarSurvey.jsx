@@ -4,6 +4,7 @@ import {
   supabase, isConnected,
   getDrinks, addDrink,
   castVotes, getVoteCounts,
+  toggleKeep, getKeepCounts,
   resetVotes, resetSuggestions,
   getVotingOpen, setVotingOpen,
 } from '@/lib/supabase';
@@ -75,6 +76,8 @@ export default function PaynterBarSurvey() {
   // Drink data from DB (grouped by category)
   const [drinksByCategory, setDrinksByCategory] = useState(EMPTY_STATE());
   const [voteCounts, setVoteCounts] = useState({});
+  const [keepCounts, setKeepCounts] = useState({});
+  const [myKeeps, setMyKeeps] = useState({}); // drink_id -> bool
 
   // Local suggestion form
   const [suggestions, setSuggestions] = useState(EMPTY_STATE());
@@ -199,6 +202,7 @@ export default function PaynterBarSurvey() {
 
   function enterResults() {
     loadVoteCounts();
+    getKeepCounts().then(c => setKeepCounts(c));
     setPhase('results');
   }
 
@@ -359,6 +363,52 @@ export default function PaynterBarSurvey() {
     const currentItems = (drinksByCategory[activeCategory] || []).filter(d => d.is_current_stock);
     const mySuggestions = suggestions[activeCategory] || [];
 
+    // Group wine items by sub-type
+    const WINE_GROUPS = ['White', 'Red', 'Rosé'];
+    const isWine = activeCategory === 'wine';
+    const wineTypeMap = {
+      White: ['Chardonnay','Sauvignon Blanc','Pinot Gris','Riesling','Pinot Grigio'],
+      Red:   ['Cabernet Sauvignon','Shiraz / Syrah','Merlot','Pinot Noir'],
+      Rosé:  ['Rosé'],
+    };
+    function wineGroup(item) {
+      for (const [group, types] of Object.entries(wineTypeMap)) {
+        if (types.includes(item.type)) return group;
+      }
+      return 'Other';
+    }
+
+    async function handleKeep(item, checked) {
+      setMyKeeps(prev => ({ ...prev, [item.id]: checked }));
+      try { await toggleKeep(residentName, item.id, checked); } catch(e) {}
+    }
+
+    function renderCurrentItems(items) {
+      return items.map(item => {
+        const kept = !!myKeeps[item.id];
+        return (
+          <div key={item.id} style={S.currentRow}>
+            <div style={{ flex:1 }}>
+              <strong style={{ color:'#2C1A0E', fontSize:14 }}>{item.name}</strong>
+              <span style={{ color:'#888', fontSize:12, marginLeft:8 }}>{item.current_bar_price}</span>
+            </div>
+            <label style={S.keepLabel}>
+              <input type="checkbox" checked={kept} onChange={e => handleKeep(item, e.target.checked)}
+                style={{ marginRight:5, accentColor:'#4CAF50' }} />
+              <span style={{ color: kept ? '#2d5a2d' : '#888', fontWeight: kept ? 600 : 400 }}>
+                {kept ? '✓ Keep' : 'Keep'}
+              </span>
+            </label>
+            {!kept && (
+              <button style={S.replaceBtn} onClick={() => openForm('replace', item)}>
+                ↔ Replace
+              </button>
+            )}
+          </div>
+        );
+      });
+    }
+
     function openForm(mode, replacingItem = null) {
       setInlineForm({ mode, replacingId: replacingItem?.id || null, replacingName: replacingItem?.name || null });
       setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' });
@@ -405,17 +455,18 @@ export default function PaynterBarSurvey() {
           {currentItems.length > 0 && (
             <>
               <div style={S.sectionHead}>Currently stocked</div>
-              {currentItems.map(item => (
-                <div key={item.id} style={S.currentRow}>
-                  <div style={{ flex:1 }}>
-                    <strong style={{ color:'#2C1A0E', fontSize:14 }}>{item.name}</strong>
-                    <span style={{ color:'#888', fontSize:12, marginLeft:8 }}>{item.current_bar_price}</span>
-                  </div>
-                  <button style={S.replaceBtn} onClick={() => openForm('replace', item)}>
-                    ↔ Suggest replacement
-                  </button>
-                </div>
-              ))}
+              {isWine ? (
+                WINE_GROUPS.map(group => {
+                  const groupItems = currentItems.filter(i => wineGroup(i) === group);
+                  if (!groupItems.length) return null;
+                  return (
+                    <div key={group}>
+                      <div style={S.wineGroupHead}>{group}</div>
+                      {renderCurrentItems(groupItems)}
+                    </div>
+                  );
+                })
+              ) : renderCurrentItems(currentItems)}
             </>
           )}
 
@@ -657,7 +708,14 @@ export default function PaynterBarSurvey() {
                   <div style={{ flex:1 }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                       <span style={{ fontWeight:600, color:'#2C1A0E' }}>{item.name}</span>
-                      <span style={{ fontWeight:700, color:'#8B6914', fontSize:14 }}>{count} vote{count!==1?'s':''}</span>
+                      <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                        {item.is_current_stock && keepCounts[item.id] > 0 && (
+                          <span style={{ fontSize:12, color:'#2d5a2d', background:'#e8f0e8', borderRadius:4, padding:'2px 7px', fontWeight:600 }}>
+                            ✓ Keep: {keepCounts[item.id]}
+                          </span>
+                        )}
+                        <span style={{ fontWeight:700, color:'#8B6914', fontSize:14 }}>{count} vote{count!==1?'s':''}</span>
+                      </div>
                     </div>
                     <div style={{ marginTop:3 }}>
                       <Tag>{item.type}</Tag>
@@ -843,6 +901,8 @@ const S = {
   inlineForm: { background:'#FFFAF5', border:'1px solid #D4A96A', borderRadius:8, padding:'14px', marginTop:14 },
   inlineFormTitle: { fontSize:13, fontWeight:600, color:'#2C1A0E', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' },
   closeFormBtn: { background:'none', border:'none', color:'#aaa', cursor:'pointer', fontSize:16, padding:'0 4px' },
+  keepLabel: { display:'flex', alignItems:'center', fontSize:12, cursor:'pointer', marginLeft:8, whiteSpace:'nowrap', userSelect:'none' },
+  wineGroupHead: { fontSize:11, fontWeight:700, color:'#aaa', textTransform:'uppercase', letterSpacing:1, padding:'8px 0 4px', borderBottom:'1px solid #f0e0c8', marginBottom:4 },
   instrText: { fontSize:13, color:'#666', margin:'0 0 12px', lineHeight:1.6 },
   instrRow: { display:'flex', flexDirection:'column', gap:12 },
   instrPhase: { display:'flex', gap:12, alignItems:'flex-start' },

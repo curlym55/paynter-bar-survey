@@ -62,6 +62,31 @@ export async function getVoteCounts() {
   return map;
 }
 
+// ── Keeps ─────────────────────────────────────────────────────
+
+export async function toggleKeep(residentName, drinkId, keeping) {
+  if (!supabase) return null;
+  if (keeping) {
+    const { error } = await supabase.from('keeps')
+      .upsert({ resident_name: residentName, drink_id: drinkId }, { onConflict: 'resident_name,drink_id' });
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from('keeps')
+      .delete().eq('resident_name', residentName).eq('drink_id', drinkId);
+    if (error) throw error;
+  }
+  return true;
+}
+
+export async function getKeepCounts() {
+  if (!supabase) return {};
+  const { data, error } = await supabase.from('keep_counts').select('*');
+  if (error) return {};
+  const map = {};
+  (data || []).forEach(r => { map[r.drink_id] = r.keep_count; });
+  return map;
+}
+
 // ── Settings ──────────────────────────────────────────────────
 
 export async function getVotingOpen() {
