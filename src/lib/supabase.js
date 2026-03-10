@@ -114,8 +114,10 @@ export async function setVotingOpen(open) {
 
 export async function resetVotes() {
   if (!supabase) return null;
-  const { error } = await supabase.from('votes').delete().neq('id', 0);
-  if (error) throw error;
+  const { error: e1 } = await supabase.from('votes').delete().gte('created_at', '2000-01-01');
+  if (e1) throw e1;
+  const { error: e2 } = await supabase.from('keeps').delete().gte('created_at', '2000-01-01');
+  if (e2) throw e2;
   return true;
 }
 
