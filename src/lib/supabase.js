@@ -62,6 +62,25 @@ export async function getVoteCounts() {
   return map;
 }
 
+// ── Submissions ───────────────────────────────────────────────
+
+export async function submitSurvey(residentName, comment) {
+  if (!supabase) return null;
+  const { error } = await supabase.from('submissions')
+    .upsert({ resident_name: residentName, comment: comment || null }, { onConflict: 'resident_name' });
+  if (error) throw error;
+  return true;
+}
+
+export async function getSubmissionCount() {
+  if (!supabase) return 0;
+  const { count, error } = await supabase
+    .from('submissions')
+    .select('*', { count: 'exact', head: true });
+  if (error) return 0;
+  return count || 0;
+}
+
 // ── Keeps ─────────────────────────────────────────────────────
 
 export async function toggleKeep(residentName, drinkId, keeping) {

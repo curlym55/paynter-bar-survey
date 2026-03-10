@@ -5,6 +5,7 @@ import {
   getDrinks, addDrink,
   castVotes, getVoteCounts,
   toggleKeep, getKeepCounts,
+  submitSurvey, getSubmissionCount,
   resetVotes, resetSuggestions,
   getVotingOpen, setVotingOpen,
 } from '@/lib/supabase';
@@ -72,6 +73,8 @@ export default function PaynterBarSurvey() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [votingOpen, setVotingOpenState] = useState(false);
+  const [surveyComment, setSurveyComment] = useState('');
+  const [submissionCount, setSubmissionCount] = useState(null);
 
   // Drink data from DB (grouped by category)
   const [drinksByCategory, setDrinksByCategory] = useState(EMPTY_STATE());
@@ -88,7 +91,12 @@ export default function PaynterBarSurvey() {
   const [votes, setVotes] = useState(EMPTY_STATE());
 
   // Load drinks and voting status on mount
-  useEffect(() => { loadDrinks(); loadVotingStatus(); }, []);
+  useEffect(() => { loadDrinks(); loadVotingStatus(); loadSubmissionCount(); }, []);
+
+  async function loadSubmissionCount() {
+    const count = await getSubmissionCount();
+    setSubmissionCount(count);
+  }
 
   async function loadVotingStatus() {
     const open = await getVotingOpen();
@@ -162,10 +170,11 @@ export default function PaynterBarSurvey() {
   }
 
   async function submitSuggestions() {
-    // Suggestions already saved live — just mark submitted
     setLoading(true); setError('');
     try {
+      await submitSurvey(residentName, surveyComment);
       await loadDrinks();
+      await loadSubmissionCount();
       setSubmitted(true);
     } catch (e) {
       setError('Could not finalise. Please try again.');
@@ -286,6 +295,11 @@ export default function PaynterBarSurvey() {
         <h1 style={S.heroTitle}>Paynter Bar</h1>
         <p style={S.heroSub}>Drink Selection Survey</p>
         <p style={S.heroDesc}>Help us choose what to stock — your favourites, your price range, your call.</p>
+        {submissionCount > 0 && (
+          <div style={S.participationBadge}>
+            👥 {submissionCount} resident{submissionCount !== 1 ? 's' : ''} have completed the survey
+          </div>
+        )}
       </div>
       <div style={S.card}>
         <h2 style={S.cardTitle}>How this survey works</h2>
@@ -659,6 +673,15 @@ export default function PaynterBarSurvey() {
           {keptItems.length === 0 && allSuggestions.length === 0 && (
             <p style={{ color:'#aaa', fontStyle:'italic', fontSize:13 }}>Nothing recorded yet — go back and add some suggestions.</p>
           )}
+
+          {/* Comments box */}
+          <div style={{ marginTop:20, paddingTop:16, borderTop:'1px solid #F0E0C8' }}>
+            <label style={S.label}>💬 Anything else you'd like us to know? (optional)</label>
+            <textarea style={{ ...S.input, height:80, resize:'vertical', fontFamily:'inherit' }}
+              placeholder="e.g. Would love a happy hour on Fridays, or more low-alcohol options..."
+              value={surveyComment}
+              onChange={e => setSurveyComment(e.target.value)} />
+          </div>
         </div>
 
         {error && <div style={S.errorBox}>{error}</div>}
@@ -942,11 +965,39 @@ export default function PaynterBarSurvey() {
           {loading ? '...' : '🗑 Remove user suggestions'}
         </button>
       </div>
+
+      <AdminComments />
     </div>
   );
 }
 
 // ── Tag helper ────────────────────────────────────────────────
+
+function AdminComments() {
+  const [comments, setComments] = useState([]);
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.from('submissions').select('resident_name, comment, created_at')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setComments((data || []).filter(r => r.comment)));
+  }, []);
+  if (comments.length === 0) return null;
+  return (
+    <div style={{ margin:'16px 14px', background:'#fff', borderRadius:12, border:'1px solid #F0E0C8', padding:'16px' }}>
+      <h3 style={{ fontFamily:"'Georgia',serif", fontSize:16, color:'#2C1A0E', margin:'0 0 12px' }}>
+        💬 Resident Comments ({comments.length})
+      </h3>
+      {comments.map((r, i) => (
+        <div key={i} style={{ padding:'10px 0', borderBottom: i < comments.length-1 ? '1px solid #F5ECD8' : 'none' }}>
+          <div style={{ fontSize:12, color:'#aaa', marginBottom:3 }}>
+            {r.resident_name} · {new Date(r.created_at).toLocaleDateString('en-AU')}
+          </div>
+          <div style={{ fontSize:14, color:'#333' }}>{r.comment}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ── Reference Panel ───────────────────────────────────────────
 
@@ -1026,6 +1077,7 @@ const S = {
   heroTitle: { fontFamily:"'Georgia',serif", fontSize:30, fontWeight:400, margin:'0 0 6px', color:'#F5C842', letterSpacing:1 },
   heroSub: { fontSize:12, color:'#D4A96A', margin:'0 0 10px', letterSpacing:2, textTransform:'uppercase' },
   heroDesc: { fontSize:14, color:'#E8D5B7', maxWidth:420, margin:'0 auto 16px' },
+  participationBadge: { display:'inline-block', background:'rgba(255,255,255,0.15)', color:'#F5E6C8', border:'1px solid rgba(245,200,66,0.4)', borderRadius:20, padding:'6px 16px', fontSize:13, margin:'0 auto' },
   pillSection: { marginTop:14 },
   catPillRow: { display:'flex', flexWrap:'wrap', gap:6, justifyContent:'center' },
   catPill: { background:'rgba(255,255,255,0.12)', color:'#F5E6C8', borderRadius:20, padding:'4px 10px', fontSize:12, border:'1px solid rgba(255,255,255,0.2)' },
