@@ -164,7 +164,7 @@ export default function PaynterBarSurvey() {
   }
 
   async function enterAdmin() {
-    if (adminPin !== '1234') { alert('Incorrect PIN'); return; }
+    if (adminPin !== '3838') { alert('Incorrect PIN'); return; }
     setLoading(true);
     const responses = await getAllResponses();
     setAdminData(responses);
@@ -187,7 +187,7 @@ export default function PaynterBarSurvey() {
 
       <div style={S.card}>
         <h2 style={S.cardTitle}>How it works</h2>
-        <p style={S.instrText}>Browse each drink category and tick the styles you enjoy or would like to see at the bar. You can also suggest specific brands. Anonymous — no name needed.</p>
+        <p style={S.instrText}>Browse each drink category and tick the styles you enjoy or would like to see at the bar. Each category has a <strong>Currently stocked</strong> dropdown so you can see what we already carry and at what price. You can also suggest specific brands. Anonymous — no name needed.</p>
         <div style={S.catPreview}>
           {CATEGORIES.map(c => (
             <span key={c.id} style={S.catChip}>{c.emoji} {c.label}</span>
