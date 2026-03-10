@@ -84,6 +84,8 @@ const CURRENT_STOCK = {
     { name: 'Minchinbury Shiraz Zero',       price: '$14/btl' },
   ],
 };
+
+const EMPTY_SELECTIONS = () => Object.fromEntries(CATEGORIES.map(c => [c.id, []]));
 const EMPTY_SUGGESTIONS = () => Object.fromEntries(CATEGORIES.map(c => [c.id, '']));
 
 // ── DB helpers ────────────────────────────────────────────────
