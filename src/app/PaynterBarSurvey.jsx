@@ -21,7 +21,69 @@ const CATEGORIES = [
   { id: 'zero',        label: 'Zero Alcohol',          emoji: '0️⃣', options: ['Zero beer', 'Zero wine', 'Zero spirits'] },
 ];
 
-const EMPTY_SELECTIONS = () => Object.fromEntries(CATEGORIES.map(c => [c.id, []]));
+const CURRENT_STOCK = {
+  white_wine: [
+    { name: 'Balliamo Pinot Grigio',         price: '$14/btl' },
+    { name: 'Adelaide Hills Pinot Gris',     price: '$15/btl' },
+    { name: 'Rosemount Chardonnay',          price: '$17/btl' },
+    { name: 'Stoneleigh Sauvignon Blanc',    price: '$19/btl' },
+  ],
+  red_wine: [
+    { name: 'Yellow Tail Merlot',            price: '$12/btl' },
+    { name: 'Wyndham 555 Shiraz',            price: '$15/btl' },
+    { name: 'Tread Softly Pinot Noir',       price: '$19.50/btl' },
+    { name: 'Pepperjack Shiraz',             price: '$24/btl' },
+    { name: 'Pepperjack Cabernet Sauvignon', price: '$24/btl' },
+  ],
+  rose: [
+    { name: 'Arrogant Frog French Rosé',     price: '$19/btl' },
+  ],
+  sparkling: [
+    { name: 'Tempus Two Prosecco',           price: '$17/btl' },
+    { name: "Jacob's Creek Cuvée Brut",      price: '$18/btl' },
+    { name: 'Balliamo Prosecco',             price: '$21/btl' },
+    { name: 'Henkell Dry-Sec Piccolo',       price: '$7/piccolo' },
+  ],
+  beer: [
+    { name: 'XXXX Gold',                     price: '$3.00' },
+    { name: 'Great Northern SuperCrisp',     price: '$3.00' },
+    { name: 'Great Northern Original',       price: '$3.00–3.50' },
+    { name: 'ASAHI Super Dry 3.5',           price: '$3.50' },
+    { name: 'Heineken',                      price: '$3.50' },
+    { name: 'James Squire 150 Lashes',       price: '$3.50' },
+    { name: 'Peroni',                        price: '$3.50' },
+    { name: 'Oettinger 500ml',               price: '$4.00' },
+    { name: 'Corona',                        price: '$4.00' },
+    { name: 'James Squire Ginger Beer',      price: '$5.50' },
+    { name: 'Guinness',                      price: '$6.00' },
+    { name: 'Kilkenny',                      price: '$6.00' },
+  ],
+  cider: [
+    { name: 'Somersby Apple Cider',          price: '$3.50' },
+  ],
+  spirits: [
+    { name: 'Bundaberg Rum',                 price: '$3.00/nip' },
+    { name: 'Canadian Club Whisky',          price: '$3.00/nip' },
+    { name: 'Jim Beam Bourbon',              price: '$3.00/nip' },
+    { name: 'Jameson Irish Whiskey',         price: '$3.00/nip' },
+    { name: 'Smirnoff Vodka',               price: '$3.00/nip' },
+    { name: 'Bombay Sapphire Gin',           price: '$3.50/nip' },
+    { name: 'Chatelle Napoleon Brandy',      price: '$4.00/nip' },
+    { name: 'Glenlivet Whisky',              price: '$4.00/nip' },
+  ],
+  liqueurs: [
+    { name: 'Galway Pipe Port',              price: '$2.00/nip' },
+    { name: 'Penfolds Club Port',            price: '$3.00/nip' },
+    { name: 'Baileys Irish Cream',           price: '$5.00/nip' },
+  ],
+  premix: [
+    { name: 'Canadian Club & Dry',           price: '$6.00' },
+  ],
+  zero: [
+    { name: 'Guinness ZERO',                 price: '$4.50' },
+    { name: 'Minchinbury Shiraz Zero',       price: '$14/btl' },
+  ],
+};
 const EMPTY_SUGGESTIONS = () => Object.fromEntries(CATEGORIES.map(c => [c.id, '']));
 
 // ── DB helpers ────────────────────────────────────────────────
@@ -70,6 +132,7 @@ export default function PaynterBarSurvey() {
   const [adminPin, setAdminPin]       = useState('');
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [adminData, setAdminData]     = useState(null);
+  const [openStock, setOpenStock]     = useState({});
 
   useEffect(() => {
     getResponseCount().then(setResponseCount);
@@ -190,6 +253,25 @@ export default function PaynterBarSurvey() {
                 );
               })}
             </div>
+
+            {CURRENT_STOCK[cat.id]?.length > 0 && (
+              <div style={S.stockPanel}>
+                <button style={S.stockToggle}
+                  onClick={() => setOpenStock(prev => ({ ...prev, [cat.id]: !prev[cat.id] }))}>
+                  {openStock[cat.id] ? '▲' : '▼'} Currently stocked ({CURRENT_STOCK[cat.id].length})
+                </button>
+                {openStock[cat.id] && (
+                  <div style={S.stockList}>
+                    {CURRENT_STOCK[cat.id].map(item => (
+                      <div key={item.name} style={S.stockRow}>
+                        <span style={S.stockName}>{item.name}</span>
+                        <span style={S.stockPrice}>{item.price}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <input style={S.suggInput}
               placeholder={`Any specific brands or styles to suggest?`}
               value={catSuggestion}
@@ -450,6 +532,12 @@ const S = {
   optionCheckChecked: { background:'#F5C842', border:'1.5px solid #F5C842', color:'#2C1A0E', fontWeight:700 },
   optionText: { fontSize:13, color:'#2C1A0E', fontFamily:'sans-serif' },
   suggInput: { width:'100%', padding:'8px 12px', border:'1px solid #E8D5B7', borderRadius:8, fontSize:13, fontFamily:'sans-serif', color:'#444', background:'#FAF6F0', outline:'none', boxSizing:'border-box' },
+  stockPanel: { marginBottom:10, borderRadius:8, border:'1px solid #F0E0C8', overflow:'hidden' },
+  stockToggle: { width:'100%', padding:'7px 12px', background:'#FAF6F0', border:'none', textAlign:'left', fontSize:12, color:'#999', cursor:'pointer', fontFamily:'sans-serif', letterSpacing:0.3 },
+  stockList: { borderTop:'1px solid #F0E0C8' },
+  stockRow: { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'6px 12px', borderBottom:'1px solid #FAF6F0' },
+  stockName: { fontSize:13, color:'#555', fontFamily:'sans-serif' },
+  stockPrice: { fontSize:12, color:'#D4A96A', fontFamily:'sans-serif', fontWeight:600, flexShrink:0, marginLeft:8 },
   commentCard: { background:'#fff', margin:'10px 14px 0', borderRadius:12, padding:'20px', border:'1px solid #F0E0C8' },
   commentLabel: { display:'block', fontSize:14, color:'#2C1A0E', marginBottom:8, fontFamily:"'Georgia',serif" },
   commentArea: { width:'100%', minHeight:80, padding:'10px 12px', border:'1px solid #E8D5B7', borderRadius:8, fontSize:13, fontFamily:'sans-serif', color:'#444', resize:'vertical', boxSizing:'border-box', outline:'none' },
