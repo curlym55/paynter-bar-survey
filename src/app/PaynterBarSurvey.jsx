@@ -79,6 +79,7 @@ export default function PaynterBarSurvey() {
   // Local suggestion form
   const [suggestions, setSuggestions] = useState(EMPTY_STATE());
   const [currentSuggestion, setCurrentSuggestion] = useState({ name:'', type:'', priceRange:'', notes:'' });
+  const [inlineForm, setInlineForm] = useState(null); // null | { mode: 'replace'|'add', replacingId: id|null }
 
   // Local vote selections
   const [votes, setVotes] = useState(EMPTY_STATE());
@@ -355,6 +356,35 @@ export default function PaynterBarSurvey() {
       </div>
     );
 
+    const currentItems = (drinksByCategory[activeCategory] || []).filter(d => d.is_current_stock);
+    const mySuggestions = suggestions[activeCategory] || [];
+
+    function openForm(mode, replacingItem = null) {
+      setInlineForm({ mode, replacingId: replacingItem?.id || null, replacingName: replacingItem?.name || null });
+      setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' });
+    }
+
+    function closeForm() {
+      setInlineForm(null);
+      setCurrentSuggestion({ name:'', type:'', priceRange:'', notes:'' });
+    }
+
+    function addLocalSuggestionInline() {
+      const { name, type, priceRange, notes } = currentSuggestion;
+      if (!name || !type || !priceRange) return;
+      const rangeObj = PRICE_RANGES[activeCategory].find(r => r.label === priceRange);
+      setSuggestions(prev => ({
+        ...prev,
+        [activeCategory]: [...prev[activeCategory], {
+          id: `local-${Date.now()}`, name, type, priceRange,
+          price: rangeObj?.range || '', notes, suggestedBy: residentName,
+          isReplacement: inlineForm?.mode === 'replace',
+          replacingName: inlineForm?.replacingName || null,
+        }],
+      }));
+      closeForm();
+    }
+
     return (
       <div style={S.root}>
         {dbWarning}
@@ -367,62 +397,99 @@ export default function PaynterBarSurvey() {
         </div>
 
         <GroupedTabs withBadgeFrom={suggestions} />
-        <PriceBadges />
-
-        <ReferencePanel drinks={drinksByCategory[activeCategory] || []} category={activeCategory} />
 
         <div style={{ ...S.card, ...(isZero(activeCategory) ? S.cardZero : {}) }}>
-          <h3 style={S.cardTitle}>Suggest a {CAT_LABELS[activeCategory]}</h3>
-          <div style={S.formGrid}>
-            <div>
-              <label style={S.label}>Brand / Name *</label>
-              <input style={S.input} value={currentSuggestion.name} placeholder={PLACEHOLDERS[activeCategory]}
-                onChange={e => setCurrentSuggestion(p => ({ ...p, name:e.target.value }))} />
-            </div>
-            <div>
-              <label style={S.label}>Type *</label>
-              <select style={S.input} value={currentSuggestion.type}
-                onChange={e => setCurrentSuggestion(p => ({ ...p, type:e.target.value }))}>
-                <option value="">Select type...</option>
-                {TYPE_OPTIONS[activeCategory].map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={S.label}>Price Range *</label>
-              <select style={S.input} value={currentSuggestion.priceRange}
-                onChange={e => setCurrentSuggestion(p => ({ ...p, priceRange:e.target.value }))}>
-                <option value="">Select range...</option>
-                {PRICE_RANGES[activeCategory].map(r => (
-                  <option key={r.label} value={r.label}>{r.label} — {r.range}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={S.label}>Notes (optional)</label>
-              <input style={S.input} placeholder="e.g. great as a house pour..."
-                value={currentSuggestion.notes}
-                onChange={e => setCurrentSuggestion(p => ({ ...p, notes:e.target.value }))} />
-            </div>
-          </div>
-          <button style={{ ...S.addBtn, ...(currentSuggestion.name && currentSuggestion.type && currentSuggestion.priceRange ? {} : S.disabled) }}
-            onClick={addLocalSuggestion}>+ Add to my list</button>
-        </div>
+          <h3 style={S.cardTitle}>{CAT_EMOJI[activeCategory]} {CAT_LABELS[activeCategory]}</h3>
 
-        {suggestions[activeCategory].length > 0 && (
-          <div style={S.card}>
-            <h3 style={S.cardTitle}>Your {CAT_LABELS[activeCategory]} suggestions</h3>
-            {suggestions[activeCategory].map(s => (
-              <div key={s.id} style={S.suggRow}>
-                <div style={{ flex:1 }}>
-                  <strong style={{ color:'#2C1A0E' }}>{s.name}</strong>
-                  <Tag>{s.type}</Tag><Tag gold>{s.priceRange} · {s.price}</Tag>
-                  {s.notes && <p style={{ margin:'3px 0 0', fontSize:12, color:'#888' }}>{s.notes}</p>}
+          {/* Current stock list */}
+          {currentItems.length > 0 && (
+            <>
+              <div style={S.sectionHead}>Currently stocked</div>
+              {currentItems.map(item => (
+                <div key={item.id} style={S.currentRow}>
+                  <div style={{ flex:1 }}>
+                    <strong style={{ color:'#2C1A0E', fontSize:14 }}>{item.name}</strong>
+                    <span style={{ color:'#888', fontSize:12, marginLeft:8 }}>{item.current_bar_price}</span>
+                  </div>
+                  <button style={S.replaceBtn} onClick={() => openForm('replace', item)}>
+                    ↔ Suggest replacement
+                  </button>
                 </div>
-                <button style={S.removeBtn} onClick={() => setSuggestions(prev => ({ ...prev, [activeCategory]:prev[activeCategory].filter(x => x.id!==s.id) }))}>✕</button>
+              ))}
+            </>
+          )}
+
+          {/* My suggestions for this category */}
+          {mySuggestions.length > 0 && (
+            <>
+              <div style={{ ...S.sectionHead, marginTop:14 }}>Your suggestions</div>
+              {mySuggestions.map(s => (
+                <div key={s.id} style={S.suggRow}>
+                  <div style={{ flex:1 }}>
+                    <strong style={{ color:'#2C1A0E' }}>{s.name}</strong>
+                    <Tag>{s.type}</Tag>
+                    <Tag gold>{s.priceRange} · {s.price}</Tag>
+                    {s.isReplacement && s.replacingName && <Tag>replaces {s.replacingName}</Tag>}
+                    {s.notes && <p style={{ margin:'3px 0 0', fontSize:12, color:'#888' }}>{s.notes}</p>}
+                  </div>
+                  <button style={S.removeBtn} onClick={() => setSuggestions(prev => ({ ...prev, [activeCategory]:prev[activeCategory].filter(x => x.id!==s.id) }))}>✕</button>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* Inline suggestion form */}
+          {inlineForm && (
+            <div style={S.inlineForm}>
+              <div style={S.inlineFormTitle}>
+                {inlineForm.mode === 'replace'
+                  ? `Suggest a replacement for ${inlineForm.replacingName}`
+                  : `Add a new ${CAT_LABELS[activeCategory]}`}
+                <button style={S.closeFormBtn} onClick={closeForm}>✕</button>
               </div>
-            ))}
-          </div>
-        )}
+              <div style={S.formGrid}>
+                <div>
+                  <label style={S.label}>Brand / Name *</label>
+                  <input style={S.input} value={currentSuggestion.name} placeholder={PLACEHOLDERS[activeCategory]}
+                    onChange={e => setCurrentSuggestion(p => ({ ...p, name:e.target.value }))} />
+                </div>
+                <div>
+                  <label style={S.label}>Type *</label>
+                  <select style={S.input} value={currentSuggestion.type}
+                    onChange={e => setCurrentSuggestion(p => ({ ...p, type:e.target.value }))}>
+                    <option value="">Select type...</option>
+                    {TYPE_OPTIONS[activeCategory].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={S.label}>Price Range *</label>
+                  <select style={S.input} value={currentSuggestion.priceRange}
+                    onChange={e => setCurrentSuggestion(p => ({ ...p, priceRange:e.target.value }))}>
+                    <option value="">Select range...</option>
+                    {PRICE_RANGES[activeCategory].map(r => (
+                      <option key={r.label} value={r.label}>{r.label} — {r.range}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={S.label}>Notes (optional)</label>
+                  <input style={S.input} placeholder="e.g. great as a house pour..."
+                    value={currentSuggestion.notes}
+                    onChange={e => setCurrentSuggestion(p => ({ ...p, notes:e.target.value }))} />
+                </div>
+              </div>
+              <button style={{ ...S.addBtn, ...(currentSuggestion.name && currentSuggestion.type && currentSuggestion.priceRange ? {} : S.disabled) }}
+                onClick={addLocalSuggestionInline}>+ Add to my list</button>
+            </div>
+          )}
+
+          {/* Add new button */}
+          {!inlineForm && (
+            <button style={S.addNewBtn} onClick={() => openForm('add')}>
+              + Add a new {CAT_LABELS[activeCategory]}
+            </button>
+          )}
+        </div>
 
         {error && <div style={S.errorBox}>{error}</div>}
 
@@ -663,9 +730,7 @@ function ReferencePanel({ drinks, category }) {
                 <div key={d.id} style={RP.row}>
                   <span style={RP.name}>{d.name}</span>
                   <span style={RP.comparePrice}>
-                    <span style={{ color:'#999' }}>Retail {d.retail_price}</span>
-                    <span style={{ color:'#bbb', margin:'0 4px' }}>→</span>
-                    <span style={{ color:'#1a5a8a', fontWeight:600 }}>~{d.markup_price}</span>
+                    <span style={{ color:'#1a5a8a', fontWeight:600 }}>~{d.markup_price} est.</span>
                   </span>
                 </div>
               ))}
@@ -771,6 +836,13 @@ const S = {
   toggleBtnOpen: { background:'#4CAF50', color:'#fff' },
   toggleBtnClose: { background:'#FF5722', color:'#fff' },
   phaseBtnLocked: { background:'#f5f5f5', borderColor:'#ddd' },
+  sectionHead: { fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8, color:'#8B6914', marginBottom:8, marginTop:4 },
+  currentRow: { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid #F0E0C8', gap:10 },
+  replaceBtn: { background:'#fff3e0', color:'#8B4513', border:'1px solid #D4A96A', borderRadius:6, padding:'5px 10px', fontSize:11, fontFamily:"'Georgia',serif", cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 },
+  addNewBtn: { width:'100%', marginTop:14, padding:'10px', background:'#f5f0e8', border:'2px dashed #D4A96A', borderRadius:8, color:'#8B6914', fontSize:13, fontFamily:"'Georgia',serif", cursor:'pointer' },
+  inlineForm: { background:'#FFFAF5', border:'1px solid #D4A96A', borderRadius:8, padding:'14px', marginTop:14 },
+  inlineFormTitle: { fontSize:13, fontWeight:600, color:'#2C1A0E', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' },
+  closeFormBtn: { background:'none', border:'none', color:'#aaa', cursor:'pointer', fontSize:16, padding:'0 4px' },
   instrText: { fontSize:13, color:'#666', margin:'0 0 12px', lineHeight:1.6 },
   instrRow: { display:'flex', flexDirection:'column', gap:12 },
   instrPhase: { display:'flex', gap:12, alignItems:'flex-start' },
