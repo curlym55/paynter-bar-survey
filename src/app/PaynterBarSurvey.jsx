@@ -549,8 +549,87 @@ export default function PaynterBarSurvey() {
             {totalSuggestions === 0 ? 'Add at least one suggestion to submit' : `${totalSuggestions} suggestion${totalSuggestions!==1?'s':''} across all categories`}
           </p>
           <button style={{ ...S.primaryBtn, fontSize:15, padding:'14px 32px', ...(totalSuggestions===0||loading ? S.disabled : {}) }}
-            onClick={submitSuggestions}>{loading ? 'Saving...' : 'Submit my suggestions →'}</button>
+            onClick={() => setPhase('review')}>Review my entries →</button>
           <button style={{ ...S.ghostBtn, display:'block', margin:'12px auto 0' }} onClick={() => setPhase('home')}>← Back</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── REVIEW ────────────────────────────────────────────────────
+
+  if (phase === 'review') {
+    const keptItems = CATEGORIES.flatMap(cat =>
+      (drinksByCategory[cat] || [])
+        .filter(d => d.is_current_stock && myKeeps[d.id])
+        .map(d => ({ ...d, category: cat }))
+    );
+
+    const allSuggestions = CATEGORIES.flatMap(cat =>
+      (suggestions[cat] || []).map(s => ({ ...s, category: cat }))
+    );
+
+    return (
+      <div style={S.root}>
+        {dbWarning}
+        <div style={S.topBar}>
+          <div>
+            <h1 style={S.topTitle}>Paynter Bar Survey</h1>
+            <p style={S.topSub}>Review Your Entries</p>
+          </div>
+          <div style={S.nameBadge}>👤 {residentName}</div>
+        </div>
+
+        <div style={S.card}>
+          <h3 style={S.cardTitle}>📋 Your survey summary</h3>
+          <p style={{ color:'#888', fontSize:13, margin:'0 0 16px' }}>
+            Check everything looks right before submitting. Go back to make changes.
+          </p>
+
+          {/* Keeps section */}
+          {keptItems.length > 0 && (
+            <div style={S.reviewSection}>
+              <div style={S.reviewSectionHead}>✓ Items you want to keep ({keptItems.length})</div>
+              {keptItems.map(item => (
+                <div key={item.id} style={S.reviewRow}>
+                  <span style={S.reviewCat}>{CAT_EMOJI[item.category] || '🍷'} {CAT_LABELS[item.category] || 'Wine'}</span>
+                  <span style={S.reviewName}>{item.name}</span>
+                  <span style={{ ...S.reviewBadge, background:'#e8f0e8', color:'#2d5a2d' }}>Keep</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Suggestions section */}
+          {allSuggestions.length > 0 && (
+            <div style={{ ...S.reviewSection, marginTop: keptItems.length ? 16 : 0 }}>
+              <div style={S.reviewSectionHead}>✏️ Your suggestions ({allSuggestions.length})</div>
+              {allSuggestions.map(s => (
+                <div key={s.id} style={S.reviewRow}>
+                  <span style={S.reviewCat}>{CAT_EMOJI[s.category]} {CAT_LABELS[s.category]}</span>
+                  <span style={S.reviewName}>
+                    {s.name}
+                    {s.isReplacement && s.replacingName && (
+                      <span style={{ color:'#aaa', fontWeight:400, fontSize:11 }}> — replaces {s.replacingName}</span>
+                    )}
+                  </span>
+                  <span style={{ ...S.reviewBadge, background:'#f5e6c8', color:'#8B4513' }}>{s.priceRange}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {keptItems.length === 0 && allSuggestions.length === 0 && (
+            <p style={{ color:'#aaa', fontStyle:'italic', fontSize:13 }}>Nothing recorded yet — go back and add some suggestions.</p>
+          )}
+        </div>
+
+        {error && <div style={S.errorBox}>{error}</div>}
+
+        <div style={S.submitArea}>
+          <button style={{ ...S.primaryBtn, fontSize:15, padding:'14px 32px', ...(totalSuggestions===0||loading ? S.disabled : {}) }}
+            onClick={submitSuggestions}>{loading ? 'Saving...' : '✓ Confirm & Submit →'}</button>
+          <button style={{ ...S.ghostBtn, display:'block', margin:'12px auto 0' }} onClick={() => setPhase('suggest')}>← Back to edit</button>
         </div>
       </div>
     );
@@ -903,6 +982,12 @@ const S = {
   closeFormBtn: { background:'none', border:'none', color:'#aaa', cursor:'pointer', fontSize:16, padding:'0 4px' },
   keepLabel: { display:'flex', alignItems:'center', fontSize:12, cursor:'pointer', marginLeft:8, whiteSpace:'nowrap', userSelect:'none' },
   wineGroupHead: { fontSize:11, fontWeight:700, color:'#aaa', textTransform:'uppercase', letterSpacing:1, padding:'8px 0 4px', borderBottom:'1px solid #f0e0c8', marginBottom:4 },
+  reviewSection: { borderRadius:8, overflow:'hidden', border:'1px solid #F0E0C8' },
+  reviewSectionHead: { background:'#F5ECD8', padding:'8px 12px', fontSize:12, fontWeight:700, color:'#6B3A2A' },
+  reviewRow: { display:'flex', alignItems:'center', gap:8, padding:'8px 12px', borderBottom:'1px solid #faf0e0', flexWrap:'wrap' },
+  reviewCat: { fontSize:11, color:'#aaa', minWidth:100 },
+  reviewName: { flex:1, fontSize:13, fontWeight:600, color:'#2C1A0E' },
+  reviewBadge: { fontSize:11, borderRadius:4, padding:'2px 7px', whiteSpace:'nowrap' },
   instrText: { fontSize:13, color:'#666', margin:'0 0 12px', lineHeight:1.6 },
   instrRow: { display:'flex', flexDirection:'column', gap:12 },
   instrPhase: { display:'flex', gap:12, alignItems:'flex-start' },
