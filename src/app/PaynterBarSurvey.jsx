@@ -286,15 +286,6 @@ export default function PaynterBarSurvey() {
         <h1 style={S.heroTitle}>Paynter Bar</h1>
         <p style={S.heroSub}>Drink Selection Survey</p>
         <p style={S.heroDesc}>Help us choose what to stock — your favourites, your price range, your call.</p>
-        <div style={S.pillSection}>
-          <div style={S.catPillRow}>
-            {CAT_GROUPS[0].cats.map(c => <span key={c} style={S.catPill}>{CAT_EMOJI[c]} {CAT_LABELS[c]}</span>)}
-          </div>
-          <div style={{ ...S.catPillRow, marginTop:6 }}>
-            <span style={S.zeroPillLabel}>0% Zero Alcohol:</span>
-            {CAT_GROUPS[1].cats.map(c => <span key={c} style={{ ...S.catPill, ...S.catPillZero }}>{CAT_EMOJI[c]} {CAT_LABELS[c]}</span>)}
-          </div>
-        </div>
       </div>
       <div style={S.card}>
         <h2 style={S.cardTitle}>How this survey works</h2>
