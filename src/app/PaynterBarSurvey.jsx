@@ -17,7 +17,7 @@ const CATEGORIES = [
   { id: 'cider',       label: 'Cider',                 emoji: '🍏', options: ['Apple', 'Pear', 'Berry/flavoured'] },
   { id: 'spirits',     label: 'Spirits',               emoji: '🥃', options: ['Gin', 'Rum', 'Whisky/Scotch', 'Bourbon', 'Vodka'] },
   { id: 'liqueurs',    label: 'Liqueurs & Fortified',  emoji: '🍫', options: ['Baileys/cream liqueur', 'Port'] },
-  { id: 'premix',      label: 'Premix / RTD',          emoji: '🥤', options: ['Bourbon & cola', 'Gin & tonic', 'Vodka mix', 'Rum & cola'] },
+  { id: 'premix',      label: 'Premix',                emoji: '🥤', options: ['Bourbon & cola', 'Gin & tonic', 'Vodka mix', 'Rum & cola'] },
   { id: 'zero',        label: 'Zero Alcohol',          emoji: '0️⃣', options: ['Zero beer', 'Zero wine', 'Zero spirits'] },
 ];
 
@@ -139,8 +139,8 @@ export default function PaynterBarSurvey() {
             <p style={{ fontFamily:'sans-serif', fontSize:14 }}>The survey is currently closed.</p>
           </div>
         )}
-        <div style={{ textAlign:'center', marginTop:16 }}>
-          <button style={S.ghostBtn} onClick={() => setShowAdminLogin(v => !v)}>🔒 Admin</button>
+        <div style={{ textAlign:'center', marginTop:16, paddingTop:16, borderTop:'1px solid #F0E0C8' }}>
+          <button style={{ ...S.ghostBtn, color:'#aaa', fontSize:12 }} onClick={() => setShowAdminLogin(v => !v)}>🔒 Admin access</button>
         </div>
         {showAdminLogin && (
           <div style={S.adminBox}>
@@ -319,6 +319,16 @@ export default function PaynterBarSurvey() {
           rows.push([cat.label, opt, votes, `${pct}%`]);
         });
       });
+      if (allSuggestions.length > 0) {
+        rows.push([]);
+        rows.push(['SUGGESTIONS', 'Category', 'Text']);
+        allSuggestions.forEach(s => rows.push(['', s.cat, s.text]));
+      }
+      if (allComments.length > 0) {
+        rows.push([]);
+        rows.push(['COMMENTS', 'Date', 'Text']);
+        allComments.forEach(c => rows.push(['', new Date(c.date).toLocaleDateString('en-AU'), c.text]));
+      }
       const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
       const a = document.createElement('a');
       a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
