@@ -595,6 +595,10 @@ export default function PaynterBarSurvey() {
                   <span style={S.reviewCat}>{CAT_EMOJI[item.category] || '🍷'} {CAT_LABELS[item.category] || 'Wine'}</span>
                   <span style={S.reviewName}>{item.name}</span>
                   <span style={{ ...S.reviewBadge, background:'#e8f0e8', color:'#2d5a2d' }}>Keep</span>
+                  <button style={S.reviewDeleteBtn} onClick={async () => {
+                    setMyKeeps(prev => { const n = { ...prev }; delete n[item.id]; return n; });
+                    try { await toggleKeep(residentName, item.id, false); } catch(e) {}
+                  }}>✕</button>
                 </div>
               ))}
             </div>
@@ -614,6 +618,12 @@ export default function PaynterBarSurvey() {
                     )}
                   </span>
                   <span style={{ ...S.reviewBadge, background:'#f5e6c8', color:'#8B4513' }}>{s.priceRange}</span>
+                  <button style={S.reviewDeleteBtn} onClick={() =>
+                    setSuggestions(prev => ({
+                      ...prev,
+                      [s.category]: prev[s.category].filter(x => x.id !== s.id)
+                    }))
+                  }>✕</button>
                 </div>
               ))}
             </div>
@@ -1065,6 +1075,7 @@ const S = {
   reviewCat: { fontSize:11, color:'#aaa', minWidth:100 },
   reviewName: { flex:1, fontSize:13, fontWeight:600, color:'#2C1A0E' },
   reviewBadge: { fontSize:11, borderRadius:4, padding:'2px 7px', whiteSpace:'nowrap' },
+  reviewDeleteBtn: { background:'none', border:'none', color:'#cc3333', cursor:'pointer', fontSize:15, padding:'0 4px', marginLeft:4, flexShrink:0 },
   tallySection: { marginBottom:16 },
   tallyCatHead: { background:'#F5ECD8', padding:'6px 10px', fontFamily:"'Georgia',serif", fontSize:13, fontWeight:700, color:'#6B3A2A', borderRadius:'6px 6px 0 0', borderBottom:'2px solid #E8D5B7' },
   tallyTable: { border:'1px solid #F0E0C8', borderTop:'none', borderRadius:'0 0 6px 6px', overflow:'hidden' },
