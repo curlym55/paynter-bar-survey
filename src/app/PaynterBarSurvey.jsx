@@ -720,6 +720,31 @@ export default function PaynterBarSurvey() {
 
   // ── RESULTS ───────────────────────────────────────────────────
 
+  function downloadTallyCSV() {
+    const rows = [['Category', 'Item', 'Type', 'Status', 'Bar Price', 'Votes', 'Keeps']];
+    CATEGORIES.forEach(cat => {
+      const items = [...(drinksByCategory[cat] || [])];
+      const sorted = items.sort((a, b) => (voteCounts[b.id] || 0) - (voteCounts[a.id] || 0));
+      sorted.forEach(item => {
+        rows.push([
+          CAT_LABELS[cat],
+          item.name,
+          item.type,
+          item.is_current_stock ? 'Current stock' : 'Suggestion',
+          item.current_bar_price || '',
+          voteCounts[item.id] || 0,
+          keepCounts[item.id] || 0,
+        ]);
+      });
+    });
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'paynter-bar-survey-tally.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div style={S.root}>
       {dbWarning}
@@ -819,6 +844,58 @@ export default function PaynterBarSurvey() {
       </div>
 
       {error && <div style={S.errorBox}>{error}</div>}
+
+      {/* Full Tally — all categories */}
+      <div style={S.card} id="tally-printable">
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+          <h3 style={{ ...S.cardTitle, margin:0 }}>📊 Full Tally — All Categories</h3>
+          <div style={{ display:'flex', gap:8 }}>
+            <button style={{ ...S.ghostBtn, fontSize:12 }} onClick={() => window.print()}>🖨 Print</button>
+            <button style={{ ...S.ghostBtn, fontSize:12 }} onClick={downloadTallyCSV}>⬇ Download CSV</button>
+          </div>
+        </div>
+        {CATEGORIES.map(cat => {
+          const items = [...(drinksByCategory[cat] || [])];
+          const sorted = items.sort((a, b) => (voteCounts[b.id] || 0) - (voteCounts[a.id] || 0));
+          if (!sorted.length) return null;
+          return (
+            <div key={cat} style={S.tallySection}>
+              <div style={S.tallyCatHead}>{CAT_EMOJI[cat]} {CAT_LABELS[cat]}</div>
+              <div style={S.tallyTable}>
+                <div style={S.tallyHeaderRow}>
+                  <span style={{ flex:1 }}>Item</span>
+                  <span style={S.tallyCol}>Status</span>
+                  <span style={S.tallyCol}>Keeps</span>
+                  <span style={S.tallyCol}>Votes</span>
+                </div>
+                {sorted.map(item => {
+                  const votes = voteCounts[item.id] || 0;
+                  const keeps = keepCounts[item.id] || 0;
+                  return (
+                    <div key={item.id} style={{ ...S.tallyRow, ...(votes > 0 ? S.tallyRowActive : {}) }}>
+                      <span style={{ flex:1, fontSize:13, color:'#2C1A0E' }}>
+                        {item.name}
+                        {!item.is_seed && item.suggested_by && <span style={{ color:'#aaa', fontSize:11, marginLeft:6 }}>({item.suggested_by})</span>}
+                      </span>
+                      <span style={S.tallyCol}>
+                        {item.is_current_stock
+                          ? <span style={{ color:'#2d5a2d', fontSize:11, fontWeight:600 }}>On menu</span>
+                          : <span style={{ color:'#888', fontSize:11 }}>Suggestion</span>}
+                      </span>
+                      <span style={{ ...S.tallyCol, color: keeps > 0 ? '#2d5a2d' : '#ccc', fontWeight: keeps > 0 ? 700 : 400 }}>
+                        {keeps > 0 ? keeps : '—'}
+                      </span>
+                      <span style={{ ...S.tallyCol, color: votes > 0 ? '#8B6914' : '#ccc', fontWeight: votes > 0 ? 700 : 400 }}>
+                        {votes > 0 ? votes : '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       <div style={{ textAlign:'center', padding:'16px 16px 0', display:'flex', gap:12, justifyContent:'center', flexWrap:'wrap' }}>
         <button style={{ ...S.ghostBtn, color:'#cc3333' }} onClick={() => handleAdminReset('votes')}>
@@ -988,6 +1065,13 @@ const S = {
   reviewCat: { fontSize:11, color:'#aaa', minWidth:100 },
   reviewName: { flex:1, fontSize:13, fontWeight:600, color:'#2C1A0E' },
   reviewBadge: { fontSize:11, borderRadius:4, padding:'2px 7px', whiteSpace:'nowrap' },
+  tallySection: { marginBottom:16 },
+  tallyCatHead: { background:'#F5ECD8', padding:'6px 10px', fontFamily:"'Georgia',serif", fontSize:13, fontWeight:700, color:'#6B3A2A', borderRadius:'6px 6px 0 0', borderBottom:'2px solid #E8D5B7' },
+  tallyTable: { border:'1px solid #F0E0C8', borderTop:'none', borderRadius:'0 0 6px 6px', overflow:'hidden' },
+  tallyHeaderRow: { display:'flex', padding:'6px 10px', background:'#faf5ee', fontSize:11, fontWeight:700, color:'#aaa', textTransform:'uppercase', letterSpacing:0.5, borderBottom:'1px solid #F0E0C8' },
+  tallyRow: { display:'flex', alignItems:'center', padding:'7px 10px', borderBottom:'1px solid #faf0e0' },
+  tallyRowActive: { background:'#fffdf8' },
+  tallyCol: { width:80, textAlign:'center', fontSize:13, flexShrink:0 },
   instrText: { fontSize:13, color:'#666', margin:'0 0 12px', lineHeight:1.6 },
   instrRow: { display:'flex', flexDirection:'column', gap:12 },
   instrPhase: { display:'flex', gap:12, alignItems:'flex-start' },
