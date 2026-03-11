@@ -11,7 +11,7 @@ const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL
 const CATEGORIES = [
   { id: 'white_wine',  label: 'White Wine',           emoji: '🥂', options: ['Chardonnay', 'Sauvignon Blanc', 'Pinot Gris/Grigio', 'Riesling'] },
   { id: 'red_wine',    label: 'Red Wine',              emoji: '🍷', options: ['Shiraz', 'Cabernet Sauvignon', 'Merlot', 'Pinot Noir'] },
-  { id: 'rose',        label: 'Rosé',                  emoji: '🌸', options: ['Rosé'] },
+  { id: 'rose',        label: 'Rose',                   emoji: '🌸', options: ['Rose'] },
   { id: 'sparkling',   label: 'Sparkling',             emoji: '🍾', options: ['Prosecco', 'Champagne/Méthode', 'Brut/Dry', 'Piccolo (single serve)'] },
   { id: 'beer',        label: 'Beer',                  emoji: '🍺', options: ['Mid-strength lager', 'Full-strength lager', 'Pale ale', 'Dark/stout', 'Ginger beer'] },
   { id: 'cider',       label: 'Cider',                 emoji: '🍏', options: ['Apple', 'Pear', 'Berry/flavoured'] },
@@ -394,30 +394,62 @@ export default function PaynterBarSurvey() {
       });
     });
 
-    function downloadCSV() {
-      const rows = [['Category', 'Option', 'Votes', 'Percentage']];
-      CATEGORIES.forEach(cat => {
-        cat.options.forEach(opt => {
-          const votes = tally[cat.id][opt] || 0;
-          const pct = totalResponses > 0 ? Math.round((votes / totalResponses) * 100) : 0;
-          rows.push([cat.label, opt, votes, `${pct}%`]);
+    function downloadExcel() {
+      // Dynamically load SheetJS
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      script.onload = () => {
+        const XLSX = window.XLSX;
+        const wb = XLSX.utils.book_new();
+
+        // ── Sheet 1: Tally ──────────────────────────────────────
+        const tallyRows = [['Category', 'Option', 'Votes', 'Percentage']];
+        CATEGORIES.forEach(cat => {
+          const label = cat.label.replace(/\u00e9/g, 'e').replace(/é/g, 'e') || cat.label;
+          cat.options.forEach(opt => {
+            const votes = tally[cat.id][opt] || 0;
+            const pct = totalResponses > 0 ? Math.round((votes / totalResponses) * 100) : 0;
+            tallyRows.push([cat.label, opt, votes, pct / 100]);
+          });
         });
-      });
-      if (allSuggestions.length > 0) {
-        rows.push([]);
-        rows.push(['SUGGESTIONS', 'Category', 'Text']);
-        allSuggestions.forEach(s => rows.push(['', s.cat, s.text]));
-      }
-      if (allComments.length > 0) {
-        rows.push([]);
-        rows.push(['COMMENTS', 'Date', 'Text']);
-        allComments.forEach(c => rows.push(['', new Date(c.date).toLocaleDateString('en-AU'), c.text]));
-      }
-      const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-      const a = document.createElement('a');
-      a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-      a.download = 'paynter-bar-survey-results.csv';
-      a.click();
+        const ws1 = XLSX.utils.aoa_to_sheet(tallyRows);
+        ws1['!cols'] = [{ wch:22 }, { wch:28 }, { wch:8 }, { wch:12 }];
+        // Format percentage column
+        for (let i = 1; i < tallyRows.length; i++) {
+          const cell = ws1[XLSX.utils.encode_cell({ r:i, c:3 })];
+          if (cell) cell.z = '0%';
+        }
+        XLSX.utils.book_append_sheet(wb, ws1, 'Tally');
+
+        // ── Sheet 2: Suggestions ────────────────────────────────
+        if (allSuggestions.length > 0) {
+          const suggRows = [['Category', 'Suggestion']];
+          allSuggestions.forEach(s => suggRows.push([s.cat, s.text]));
+          const ws2 = XLSX.utils.aoa_to_sheet(suggRows);
+          ws2['!cols'] = [{ wch:22 }, { wch:60 }];
+          XLSX.utils.book_append_sheet(wb, ws2, 'Suggestions');
+        }
+
+        // ── Sheet 3: Comments ───────────────────────────────────
+        if (allComments.length > 0) {
+          const commentRows = [['Date', 'Comment']];
+          allComments.forEach(c => commentRows.push([
+            new Date(c.date).toLocaleDateString('en-AU'),
+            c.text
+          ]));
+          const ws3 = XLSX.utils.aoa_to_sheet(commentRows);
+          ws3['!cols'] = [{ wch:14 }, { wch:80 }];
+          // Enable text wrap on comment column
+          for (let i = 1; i < commentRows.length; i++) {
+            const cell = ws3[XLSX.utils.encode_cell({ r:i, c:1 })];
+            if (cell) cell.s = { alignment: { wrapText: true } };
+          }
+          XLSX.utils.book_append_sheet(wb, ws3, 'Comments');
+        }
+
+        XLSX.writeFile(wb, 'paynter-bar-survey-results.xlsx');
+      };
+      document.head.appendChild(script);
     }
 
     return (
@@ -428,7 +460,7 @@ export default function PaynterBarSurvey() {
             <p style={S.topSub}>{totalResponses} response{totalResponses !== 1 ? 's' : ''} received</p>
           </div>
           <div style={{ display:'flex', gap:8 }}>
-            <button style={S.smallBtn} onClick={downloadCSV}>⬇ CSV</button>
+            <button style={S.smallBtn} onClick={downloadExcel}>⬇ Excel</button>
             <button style={{ ...S.smallBtn, background: surveyOpen ? '#cc3333' : '#2d7a2d', color:'#fff', border:'none' }}
               onClick={async () => { const next = !surveyOpen; await setSurveyOpen(next); setSurveyOpenState(next); }}>
               {surveyOpen ? '🔒 Close' : '✅ Open'}
