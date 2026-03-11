@@ -510,7 +510,7 @@ const S = {
   heroTitle: { fontSize:32, fontWeight:400, margin:'0 0 4px', letterSpacing:1.5, color:'#F5C842' },
   heroSub: { fontSize:12, textTransform:'uppercase', letterSpacing:3, color:'#D4A96A', margin:'0 0 12px' },
   heroDesc: { fontSize:14, color:'#E8D5B7', maxWidth:380, margin:'0 auto 16px', lineHeight:1.6, fontFamily:'sans-serif' },
-  countBadge: { display:'inline-block', background:'rgba(255,255,255,0.12)', border:'1px solid rgba(212,169,106,0.5)', borderRadius:20, padding:'6px 16px', fontSize:13, color:'#F5E6C8', fontFamily:'sans-serif' },
+  countBadge: { display:'inline-block', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(212,169,106,0.5)', borderRadius:20, padding:'6px 16px', fontSize:13, color:'#fff', fontFamily:'sans-serif', fontWeight:600 },
   card: { background:'#fff', margin:'14px 14px 0', borderRadius:12, padding:'20px', border:'1px solid #F0E0C8', boxShadow:'0 2px 8px rgba(44,26,14,0.06)' },
   cardTitle: { fontFamily:"'Georgia',serif", fontSize:17, color:'#2C1A0E', margin:'0 0 10px' },
   instrText: { fontSize:14, color:'#555', lineHeight:1.6, margin:'0 0 14px', fontFamily:'sans-serif' },
