@@ -187,7 +187,7 @@ export default function PaynterBarSurvey() {
 
       <div style={S.card}>
         <h2 style={S.cardTitle}>How it works</h2>
-        <p style={S.instrText}>Browse each drink category and tick the styles you enjoy or would like to see at the bar. Each category has a <strong>Currently stocked</strong> dropdown so you can see what we already carry and at what price. You can also suggest specific brands. Anonymous — no name needed.</p>
+        <p style={S.instrText}>Browse each drink category and tick the styles you enjoy or would like to see at the bar. Each category has a <strong>Currently stocked</strong> dropdown so you can see what we already carry and at what price. You can also suggest specific brands. There's a comments box at the end if you'd like to add anything else. Anonymous — no name needed.</p>
         <div style={S.catPreview}>
           {CATEGORIES.map(c => (
             <span key={c.id} style={S.catChip}>{c.emoji} {c.label}</span>
