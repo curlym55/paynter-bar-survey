@@ -179,9 +179,9 @@ export default function PaynterBarSurvey() {
         <div style={S.heroIcon}>🍷</div>
         <h1 style={S.heroTitle}>Paynter Bar</h1>
         <p style={S.heroSub}>Drink Preference Survey</p>
-        <p style={S.heroDesc}>Help us choose what to stock. Tick everything you enjoy — we want to hear from you.</p>
+        <p style={S.heroDesc}>Help us choose what to stock. Tick everything you enjoy — we want to hear from you. Survey closes <strong style={{ color:'#F5C842' }}>15th April</strong> when we will compile the results.</p>
         {responseCount > 0 && (
-          <div style={S.countBadge}>👥 {responseCount} resident{responseCount !== 1 ? 's' : ''} have responded</div>
+          <div style={S.countBadge}>👥 {responseCount} resident response{responseCount !== 1 ? 's' : ''} received</div>
         )}
       </div>
 
